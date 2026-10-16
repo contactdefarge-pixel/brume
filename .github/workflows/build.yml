@@ -2,7 +2,11 @@ name: Build Brume
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -28,23 +32,46 @@ jobs:
         if: matrix.name == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item -Recurse build/Brume_artefacts/Release/VST3/Brume.vst3 dist/
-          Copy-Item build/Brume_artefacts/Release/Standalone/Brume.exe dist/
-          Copy-Item INSTALL.txt dist/
+          New-Item -ItemType Directory -Force Brume | Out-Null
+          Copy-Item -Recurse build/Brume_artefacts/Release/VST3/Brume.vst3 Brume/
+          Copy-Item build/Brume_artefacts/Release/Standalone/Brume.exe Brume/
+          Copy-Item INSTALL.txt Brume/
+          Compress-Archive -Path Brume -DestinationPath Brume-Windows.zip
 
       - name: Package (macOS)
         if: matrix.name == 'macOS'
         run: |
-          mkdir -p dist
-          cp -R build/Brume_artefacts/Release/VST3/Brume.vst3 dist/
-          cp -R build/Brume_artefacts/Release/AU/Brume.component dist/
-          cp -R build/Brume_artefacts/Release/Standalone/Brume.app dist/
-          cp INSTALL.txt dist/
+          mkdir -p Brume
+          cp -R build/Brume_artefacts/Release/VST3/Brume.vst3 Brume/
+          cp -R build/Brume_artefacts/Release/AU/Brume.component Brume/
+          cp -R build/Brume_artefacts/Release/Standalone/Brume.app Brume/
+          cp INSTALL.txt Brume/
           # ad-hoc signature so macOS accepts the bundles locally
-          codesign --force --deep -s - dist/Brume.vst3 dist/Brume.component dist/Brume.app
+          codesign --force --deep -s - Brume/Brume.vst3 Brume/Brume.component Brume/Brume.app
+          # ditto keeps permissions and bundle structure (a plain zip would break the app)
+          ditto -c -k --sequesterRsrc --keepParent Brume Brume-macOS.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: Brume-${{ matrix.name }}
+          path: Brume-${{ matrix.name }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
           path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          gh release create "$TAG" dist/*.zip \
+            --repo "${{ github.repository }}" \
+            --title "Brume $TAG" \
+            --notes "Téléchargez Brume-macOS.zip (Mac) ou Brume-Windows.zip (Windows). Installation : voir INSTALL.txt dans l'archive." \
+            --latest

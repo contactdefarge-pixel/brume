@@ -8,13 +8,16 @@ WINDOWS (Ableton Live)
    puis cliquer sur "Rescanner".
 3. Le plugin apparaît dans le navigateur : Plug-ins > VST3 > Brume Audio > Brume.
 
-MAC (Ableton Live)
-1. Copier "Brume.vst3" dans   /Bibliothèque/Audio/Plug-Ins/VST3/
-   et "Brume.component" dans /Bibliothèque/Audio/Plug-Ins/Components/
-2. Si macOS bloque le plugin (développeur non identifié), ouvrir le Terminal et taper :
-   xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Brume.vst3
-   xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/Components/Brume.component
-3. Dans Ableton : Préférences > Plug-ins > activer "Utiliser les dossiers système VST3"
+MAC
+1. Décompresser Brume-macOS.zip (double-clic). Un dossier "Brume" apparaît.
+2. Débloquer les fichiers (macOS bloque les apps non signées par Apple). Ouvrir le Terminal et taper,
+   en adaptant le chemin si le dossier n'est pas dans Téléchargements :
+   xattr -dr com.apple.quarantine ~/Downloads/Brume
+3. Application autonome (pour Traktor) : glisser Brume.app dans le dossier Applications.
+4. Plugins (pour Ableton) :
+   - "Brume.vst3"      dans  /Bibliothèque/Audio/Plug-Ins/VST3/
+   - "Brume.component" dans  /Bibliothèque/Audio/Plug-Ins/Components/
+   Puis dans Ableton : Préférences > Plug-ins > activer "Utiliser les dossiers système VST3"
    et "Utiliser les Audio Units", puis "Rescanner".
 
 UTILISATION
