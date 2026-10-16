@@ -1,0 +1,31 @@
+BRUME - réverbe stéréo + bruit
+================================
+
+WINDOWS (Ableton Live)
+1. Copier le dossier "Brume.vst3" dans :
+   C:\Program Files\Common Files\VST3\
+2. Dans Ableton : Préférences > Plug-ins > activer "Utiliser les dossiers système VST3",
+   puis cliquer sur "Rescanner".
+3. Le plugin apparaît dans le navigateur : Plug-ins > VST3 > Brume Audio > Brume.
+
+MAC (Ableton Live)
+1. Copier "Brume.vst3" dans   /Bibliothèque/Audio/Plug-Ins/VST3/
+   et "Brume.component" dans /Bibliothèque/Audio/Plug-Ins/Components/
+2. Si macOS bloque le plugin (développeur non identifié), ouvrir le Terminal et taper :
+   xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Brume.vst3
+   xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/Components/Brume.component
+3. Dans Ableton : Préférences > Plug-ins > activer "Utiliser les dossiers système VST3"
+   et "Utiliser les Audio Units", puis "Rescanner".
+
+UTILISATION
+- Poser Brume sur une piste audio, un retour (mettre le switch sur WET) ou le Master.
+- ON / OFF : allume ou éteint l'effet. À l'arrêt, la queue de réverbe et le bruit
+  s'éteignent naturellement selon LENGTH.
+- TAP : taper le tempo du trémolo (un cycle par frappe).
+- Tous les boutons sont automatisables dans Ableton (y compris On/Off).
+- MIDI LEARN : cliquer sur le bouton MIDI en bas à droite, cliquer sur un contrôle de la pédale,
+  puis tourner ou appuyer sur le contrôle voulu de votre contrôleur. Clic droit = supprimer le lien.
+  Dans la version autonome, activer d'abord le contrôleur dans Options > Audio/MIDI Settings.
+- Double-clic sur un bouton : valeur par défaut. Maj + glisser : réglage fin.
+
+Une version autonome (Brume.exe / Brume.app) est fournie pour tester sans Ableton.

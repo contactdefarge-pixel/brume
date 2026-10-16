@@ -1,0 +1,478 @@
+#include "PluginEditor.h"
+
+using namespace brume::ui;
+
+namespace
+{
+    constexpr int kW = 520, kH = 720;
+
+    juce::Font silkFont (float h, float kerning = 0.12f)
+    {
+        juce::Font f (juce::FontOptions (h, juce::Font::bold));
+        f.setExtraKerningFactor (kerning);
+        return f;
+    }
+
+    void drawScrew (juce::Graphics& g, juce::Point<float> c, float r)
+    {
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xffd8d8d2), c.x - r * 0.4f, c.y - r * 0.4f,
+                                                 juce::Colour (0xff6a6d6c), c.x + r, c.y + r, true));
+        g.fillEllipse (c.x - r, c.y - r, r * 2, r * 2);
+        g.setColour (juce::Colour (0xff3b3d3c));
+        juce::Path p;
+        p.addRectangle (-r * 0.6f, -r * 0.09f, r * 1.2f, r * 0.18f);
+        g.fillPath (p, juce::AffineTransform::rotation (0.6f).translated (c));
+    }
+
+    void drawLed (juce::Graphics& g, juce::Point<float> c, float r, juce::Colour col, bool on)
+    {
+        if (on)
+        {
+            g.setGradientFill (juce::ColourGradient (col.withAlpha (0.55f), c.x, c.y, col.withAlpha (0.0f), c.x + r * 3.2f, c.y, true));
+            g.fillEllipse (c.x - r * 3.2f, c.y - r * 3.2f, r * 6.4f, r * 6.4f);
+            g.setGradientFill (juce::ColourGradient (juce::Colours::white, c.x - r * 0.3f, c.y - r * 0.3f, col, c.x + r, c.y + r, true));
+        }
+        else
+        {
+            g.setColour (ledOff);
+        }
+        g.fillEllipse (c.x - r, c.y - r, r * 2, r * 2);
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.drawEllipse (c.x - r, c.y - r, r * 2, r * 2, 1.0f);
+    }
+}
+
+//==============================================================================
+void BrumeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos,
+                                         float startAngle, float endAngle, juce::Slider&)
+{
+    const auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+    const float size = std::min (area.getWidth(), area.getHeight());
+    const auto c = area.getCentre();
+    const float rOuter = size * 0.5f;
+    const float rKnob = rOuter * 0.74f;
+
+    // scale ticks
+    g.setColour (silk.withAlpha (0.75f));
+    for (int i = 0; i <= 10; ++i)
+    {
+        const float a = startAngle + (endAngle - startAngle) * (float) i / 10.0f;
+        const auto p1 = c.getPointOnCircumference (rOuter * 0.86f, a);
+        const auto p2 = c.getPointOnCircumference (rOuter * 0.98f, a);
+        g.drawLine ({ p1, p2 }, i == 0 || i == 10 || i == 5 ? 1.6f : 1.0f);
+    }
+
+    // shadow
+    g.setColour (juce::Colours::black.withAlpha (0.4f));
+    g.fillEllipse (c.x - rKnob, c.y - rKnob + size * 0.05f, rKnob * 2, rKnob * 2);
+
+    // knurled skirt
+    g.setGradientFill (juce::ColourGradient (knobHi, c.x, c.y - rKnob * 0.6f, knob, c.x, c.y + rKnob, false));
+    g.fillEllipse (c.x - rKnob, c.y - rKnob, rKnob * 2, rKnob * 2);
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    for (int i = 0; i < 48; ++i)
+    {
+        const float a = juce::MathConstants<float>::twoPi * (float) i / 48.0f;
+        g.drawLine ({ c.getPointOnCircumference (rKnob * 0.86f, a), c.getPointOnCircumference (rKnob, a) }, 1.0f);
+    }
+
+    // cap
+    const float rCap = rKnob * 0.84f;
+    g.setGradientFill (juce::ColourGradient (knobHi, c.x, c.y - rCap * 0.7f, knob, c.x, c.y + rCap * 0.6f, true));
+    g.fillEllipse (c.x - rCap, c.y - rCap, rCap * 2, rCap * 2);
+    g.setColour (juce::Colours::white.withAlpha (0.08f));
+    g.drawEllipse (c.x - rCap, c.y - rCap, rCap * 2, rCap * 2, 1.0f);
+
+    // pointer
+    const float angle = startAngle + pos * (endAngle - startAngle);
+    juce::Path ptr;
+    const float pw = std::max (2.5f, rKnob * 0.16f);
+    ptr.addRoundedRectangle (-pw * 0.5f, -rCap + rCap * 0.08f, pw, rCap * 0.62f, pw * 0.5f);
+    g.setColour (silk);
+    g.fillPath (ptr, juce::AffineTransform::rotation (angle).translated (c));
+}
+
+void BrumeLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool, bool)
+{
+    // vertical mini toggle: MIX on top, WET at the bottom
+    const auto r = b.getLocalBounds().toFloat();
+    const float slotW = 18.0f, slotH = 36.0f;
+    const auto slot = juce::Rectangle<float> (slotW, slotH).withCentre (r.getCentre());
+    g.setColour (juce::Colour (0xff1b1d1c));
+    g.fillRoundedRectangle (slot, 5.0f);
+    const bool wet = b.getToggleState();
+    auto lever = juce::Rectangle<float> (slotW - 6.0f, 15.0f).withCentre ({ slot.getCentreX(), wet ? slot.getBottom() - 10.5f : slot.getY() + 10.5f });
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff2f2ee), lever.getX(), lever.getY(), juce::Colour (0xff6c6f70), lever.getX(), lever.getBottom(), false));
+    g.fillRoundedRectangle (lever, 3.5f);
+
+    g.setFont (silkFont (10.5f));
+    g.setColour (silk.withAlpha (wet ? 0.45f : 1.0f));
+    g.drawText ("MIX", juce::Rectangle<float> (r.getX(), slot.getY() - 18.0f, r.getWidth(), 14.0f), juce::Justification::centred);
+    g.setColour (silk.withAlpha (wet ? 1.0f : 0.45f));
+    g.drawText ("WET", juce::Rectangle<float> (r.getX(), slot.getBottom() + 4.0f, r.getWidth(), 14.0f), juce::Justification::centred);
+}
+
+void Footswitch::paintButton (juce::Graphics& g, bool, bool down)
+{
+    auto r = getLocalBounds().toFloat().reduced (4.0f);
+    if (down) r = r.translated (0.0f, 2.0f).reduced (1.0f);
+    const auto c = r.getCentre();
+    const float R = std::min (r.getWidth(), r.getHeight()) * 0.5f;
+
+    g.setColour (juce::Colours::black.withAlpha (0.5f));
+    g.fillEllipse (c.x - R, c.y - R + 6.0f, R * 2, R * 2);
+
+    juce::ColourGradient ring (juce::Colour (0xffc9cbc7), c.x - R * 0.5f, c.y - R * 0.7f, juce::Colour (0xff2a2c2b), c.x + R * 0.6f, c.y + R, false);
+    ring.addColour (0.45, juce::Colour (0xff6d706f));
+    g.setGradientFill (ring);
+    g.fillEllipse (c.x - R, c.y - R, R * 2, R * 2);
+
+    const float r2 = R * 0.80f;
+    g.setColour (juce::Colour (0xff0f1010));
+    g.fillEllipse (c.x - r2, c.y - r2, r2 * 2, r2 * 2);
+
+    const float r3 = R * 0.50f;
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff7f7f4), c.x - r3 * 0.3f, c.y - r3 * 0.5f,
+                                             juce::Colour (0xff6e7170), c.x + r3 * 0.6f, c.y + r3, true));
+    g.fillEllipse (c.x - r3, c.y - r3, r3 * 2, r3 * 2);
+    if (down)
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.15f));
+        g.fillEllipse (c.x - r3, c.y - r3, r3 * 2, r3 * 2);
+    }
+}
+
+//==============================================================================
+BrumeEditor::BrumeEditor (BrumeProcessor& p)
+    : AudioProcessorEditor (&p), proc (p)
+{
+    setLookAndFeel (&lnf);
+
+    const std::array<std::pair<const char*, const char*>, 8> defs {{
+        { brume::id::reverb, "REVERB" }, { brume::id::character, "CHARACTER" }, { brume::id::length, "LENGTH" }, { brume::id::air, "AIR" },
+        { brume::id::noise, "NOISE" }, { brume::id::tremolo, "TREMOLO" }, { brume::id::tempo, "TEMPO" }, { brume::id::filter, "FILTER" } }};
+
+    for (size_t i = 0; i < knobs.size(); ++i)
+    {
+        auto& k = knobs[i];
+        k.id = defs[i].first;
+        k.label = defs[i].second;
+        k.slider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
+        k.slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        k.slider.setRotaryParameters (juce::degreesToRadians (-135.0f), juce::degreesToRadians (135.0f), true);
+        k.slider.setMouseDragSensitivity (220);
+        k.slider.setVelocityModeParameters (0.6, 1, 0.0, false, juce::ModifierKeys::shiftModifier);
+        k.slider.setPopupDisplayEnabled (false, false, nullptr);
+        addAndMakeVisible (k.slider);
+        k.att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, k.id, k.slider);
+        if (auto* prm = proc.apvts.getParameter (k.id))
+            k.slider.setDoubleClickReturnValue (true, prm->convertFrom0to1 (prm->getDefaultValue()));
+        const auto id = k.id;
+        k.slider.onDragStart = [this, id] { showParam (id); };
+        k.slider.onValueChange = [this, id] { showParam (id); };
+    }
+
+    mixToggle.setClickingTogglesState (true);
+    addAndMakeVisible (mixToggle);
+    mixAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, brume::id::wet, mixToggle);
+    mixToggle.onClick = [this] { showParam (brume::id::wet); };
+
+    onSwitch.setClickingTogglesState (true);
+    addAndMakeVisible (onSwitch);
+    onAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, brume::id::on, onSwitch);
+    onSwitch.onClick = [this] { showParam (brume::id::on); };
+
+    tapSwitch.setTriggeredOnMouseDown (true);
+    tapSwitch.onClick = [this] { proc.tap(); showParam (brume::id::tempo); };
+    addAndMakeVisible (tapSwitch);
+
+    tapSmall.setButtonText ("");
+    tapSmall.setAlpha (0.01f);   // invisible hit area over the small TAP label + LED
+    tapSmall.setTriggeredOnMouseDown (true);
+    tapSmall.onClick = [this] { proc.tap(); showParam (brume::id::tempo); };
+    addAndMakeVisible (tapSmall);
+
+    midiButton.setClickingTogglesState (true);
+    midiButton.setColour (juce::TextButton::buttonColourId, juce::Colours::black.withAlpha (0.22f));
+    midiButton.setColour (juce::TextButton::buttonOnColourId, amber);
+    midiButton.setColour (juce::TextButton::textColourOffId, ink);
+    midiButton.setColour (juce::TextButton::textColourOnId, desk);
+    midiButton.setColour (juce::ComboBox::outlineColourId, line);
+    midiButton.setTooltip ("MIDI learn");
+    midiButton.onClick = [this] { setLearnMode (midiButton.getToggleState()); };
+    addAndMakeVisible (midiButton);
+    addChildComponent (overlay);
+
+    setSize (kW, kH);
+    timerCallback();
+    startTimerHz (30);
+}
+
+BrumeEditor::~BrumeEditor()
+{
+    stopTimer();
+    setLookAndFeel (nullptr);
+}
+
+juce::Rectangle<float> BrumeEditor::pedalBounds() const { return { 20.0f, 44.0f, 480.0f, 600.0f }; }
+
+void BrumeEditor::showParam (const juce::String& paramId)
+{
+    if (auto* prm = proc.apvts.getParameter (paramId))
+    {
+        lastParam = paramId;
+        readoutName = prm->getName (32).toUpperCase();
+        readoutValue = prm->getCurrentValueAsText();
+        if (paramId == brume::id::on && prm->getValue() < 0.5f)
+            readoutValue = "Off - the tail fades over " + proc.apvts.getParameter (brume::id::length)->getCurrentValueAsText();
+        repaint (0, 650, kW, 70);
+    }
+}
+
+void BrumeEditor::timerCallback()
+{
+    const float rate = brume::tremoloRateHz (proc.apvts.getRawParameterValue (brume::id::tempo)->load());
+    const bool tapOn = rate > 12.0f || proc.getTremoloPhase() < 0.3f;
+    const bool on = proc.apvts.getRawParameterValue (brume::id::on)->load() > 0.5f;
+    if (tapOn != tapLedOn || on != onLed)
+    {
+        tapLedOn = tapOn; onLed = on;
+        repaint();
+    }
+    if (lastParam.isNotEmpty() && lastParam != brume::id::on)
+        if (auto* prm = proc.apvts.getParameter (lastParam))
+        {
+            const auto txt = prm->getCurrentValueAsText();
+            if (txt != readoutValue) { readoutValue = txt; repaint (0, 650, kW, 70); }
+        }
+
+    if (learnMode)
+    {
+        const int learned = proc.popLearnedTarget();
+        if (learned >= 0)
+        {
+            readoutName = BrumeProcessor::midiTargetName (learned);
+            readoutValue = "linked to " + BrumeProcessor::describeMapping (proc.getMidiMapping (learned));
+            repaint (0, 650, kW, 70);
+        }
+        ++overlay.blink;
+        overlay.repaint();
+    }
+}
+
+juce::Rectangle<int> BrumeEditor::targetBounds (int t) const
+{
+    if (t >= 0 && t < 8) return knobs[(size_t) t].slider.getBounds();
+    if (t == 8) return mixToggle.getBounds();
+    if (t == 9) return onSwitch.getBounds();
+    if (t == 10) return tapSwitch.getBounds();
+    return {};
+}
+
+void BrumeEditor::setLearnMode (bool shouldLearn)
+{
+    learnMode = shouldLearn;
+    midiButton.setToggleState (shouldLearn, juce::dontSendNotification);
+    overlay.setVisible (shouldLearn);
+    proc.setLearnTarget (-1);
+    lastParam.clear();
+    readoutName = shouldLearn ? "MIDI LEARN" : "BRUME";
+    readoutValue = shouldLearn ? "Click a control, then move it on your controller" : "MIDI learn off";
+    repaint();
+}
+
+//==============================================================================
+void LearnOverlay::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colours::black.withAlpha (0.32f));
+
+    g.setColour (desk.withAlpha (0.92f));
+    g.fillRect (0, 0, getWidth(), 40);
+    g.setColour (amber);
+    g.setFont (silkFont (11.0f, 0.05f));
+    g.drawFittedText ("MIDI LEARN  -  click a control, then move or press it on your controller.\nRight-click a control to remove its link.",
+                      getLocalBounds().removeFromTop (40).reduced (10, 2), juce::Justification::centred, 2);
+
+    const int selected = ed.proc.getLearnTarget();
+    for (int t = 0; t < BrumeProcessor::numMidiTargets; ++t)
+    {
+        auto r = ed.targetBounds (t).toFloat().expanded (5.0f);
+        const int code = ed.proc.getMidiMapping (t);
+        const bool round = t != 8;
+        if (t == selected)
+        {
+            const float a = (blink / 6) % 2 == 0 ? 1.0f : 0.45f;
+            g.setColour (amber.withAlpha (a));
+            if (round) g.drawEllipse (r, 3.0f); else g.drawRoundedRectangle (r, 8.0f, 3.0f);
+        }
+        else
+        {
+            g.setColour (code >= 0 ? amber : silk.withAlpha (0.45f));
+            if (round) g.drawEllipse (r, code >= 0 ? 2.0f : 1.0f); else g.drawRoundedRectangle (r, 8.0f, code >= 0 ? 2.0f : 1.0f);
+        }
+        if (code >= 0)
+        {
+            auto label = juce::Rectangle<float> (r.getCentreX() - 50.0f, r.getBottom() - 4.0f, 100.0f, 16.0f);
+            g.setColour (desk.withAlpha (0.85f));
+            g.fillRoundedRectangle (label.withSizeKeepingCentre (76.0f, 15.0f), 4.0f);
+            g.setColour (amber);
+            g.setFont (juce::Font (juce::FontOptions (10.5f, juce::Font::bold)));
+            g.drawText (BrumeProcessor::describeMapping (code).upToFirstOccurrenceOf (" (", false, false), label, juce::Justification::centred);
+        }
+    }
+}
+
+void LearnOverlay::mouseDown (const juce::MouseEvent& e)
+{
+    int hit = -1;
+    for (int t = 0; t < BrumeProcessor::numMidiTargets; ++t)
+        if (ed.targetBounds (t).expanded (6).contains (e.getPosition())) { hit = t; break; }
+
+    if (hit < 0)
+    {
+        ed.proc.setLearnTarget (-1);
+        ed.readoutName = "MIDI LEARN";
+        ed.readoutValue = "Click a control, then move it on your controller";
+    }
+    else if (e.mods.isPopupMenu())
+    {
+        ed.proc.clearMidiMapping (hit);
+        ed.readoutName = BrumeProcessor::midiTargetName (hit);
+        ed.readoutValue = "MIDI link removed";
+    }
+    else
+    {
+        ed.proc.setLearnTarget (hit);
+        ed.readoutName = BrumeProcessor::midiTargetName (hit);
+        ed.readoutValue = "move or press a control on your controller...";
+    }
+    ed.repaint();
+}
+
+void BrumeEditor::resized()
+{
+    const auto pb = pedalBounds();
+    const float colW = pb.getWidth() / 4.0f;
+    const int knobSize = 78;
+    auto colX = [&] (int i) { return (int) (pb.getX() + colW * (i + 0.5f)); };
+
+    for (int i = 0; i < 4; ++i)
+        knobs[(size_t) i].slider.setBounds (juce::Rectangle<int> (knobSize, knobSize).withCentre ({ colX (i), (int) pb.getY() + 92 }));
+    for (int i = 1; i < 4; ++i)
+        knobs[(size_t) (3 + i)].slider.setBounds (juce::Rectangle<int> (knobSize, knobSize).withCentre ({ colX (i), (int) pb.getY() + 212 }));
+
+    mixToggle.setBounds (juce::Rectangle<int> (60, 80).withCentre ({ colX (0), (int) pb.getY() + 210 }));
+    tapSmall.setBounds (juce::Rectangle<int> (64, 22).withCentre ({ colX (3), (int) pb.getY() + 266 }));
+
+    knobs[7].slider.setBounds (juce::Rectangle<int> (62, 62).withCentre ({ (int) pb.getCentreX(), (int) pb.getY() + 486 }));
+    onSwitch.setBounds (juce::Rectangle<int> (104, 104).withCentre ({ (int) (pb.getX() + 120), (int) pb.getY() + 476 }));
+    tapSwitch.setBounds (juce::Rectangle<int> (104, 104).withCentre ({ (int) (pb.getRight() - 120), (int) pb.getY() + 476 }));
+
+    midiButton.setBounds (430, 664, 70, 40);
+    overlay.setBounds (0, 0, kW, 656);
+}
+
+void BrumeEditor::paint (juce::Graphics& g)
+{
+    // desk
+    g.setGradientFill (juce::ColourGradient (deskHi, kW * 0.5f, kH * 0.3f, desk, 0.0f, (float) kH, true));
+    g.fillAll();
+
+    const auto pb = pedalBounds();
+
+    // jacks on the top edge
+    {
+        const char* names[] = { "OUT R", "OUT L", "9V", "IN L", "IN R" };
+        for (int i = 0; i < 5; ++i)
+        {
+            const float x = pb.getX() + 60.0f + i * (pb.getWidth() - 120.0f) / 4.0f;
+            auto jr = juce::Rectangle<float> (i == 2 ? 18.0f : 26.0f, 16.0f).withCentre ({ x, pb.getY() - 8.0f });
+            if (i == 2) g.setColour (juce::Colour (0xff1e1e1e));
+            else g.setGradientFill (juce::ColourGradient (juce::Colour (0xff55595a), jr.getX(), 0, juce::Colour (0xffc9cbc8), jr.getCentreX(), 0, false));
+            g.fillRoundedRectangle (jr, 3.0f);
+            g.setColour (inkDim);
+            g.setFont (silkFont (9.0f));
+            g.drawText (names[i], juce::Rectangle<float> (x - 30.0f, 2.0f, 60.0f, 14.0f), juce::Justification::centred);
+        }
+    }
+
+    // enclosure
+    g.setColour (juce::Colours::black.withAlpha (0.5f));
+    g.fillRoundedRectangle (pb.translated (0.0f, 10.0f).expanded (2.0f), 24.0f);
+    g.setColour (juce::Colour (0xff3e4838));
+    g.fillRoundedRectangle (pb.translated (0.0f, 4.0f), 22.0f);
+    {
+        juce::ColourGradient body (enclHi, pb.getX() + pb.getWidth() * 0.3f, pb.getY(), enclLo, pb.getX() + pb.getWidth() * 0.6f, pb.getBottom(), false);
+        body.addColour (0.35, encl);
+        g.setGradientFill (body);
+        g.fillRoundedRectangle (pb, 22.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.18f));
+        g.drawRoundedRectangle (pb.reduced (1.0f), 21.0f, 1.2f);
+    }
+    // powder-coat grain
+    {
+        juce::Random rnd (7);
+        for (int i = 0; i < 2600; ++i)
+        {
+            const float x = pb.getX() + rnd.nextFloat() * pb.getWidth();
+            const float y = pb.getY() + rnd.nextFloat() * pb.getHeight();
+            g.setColour ((rnd.nextBool() ? juce::Colours::white : juce::Colours::black).withAlpha (0.05f));
+            g.fillRect (x, y, 1.0f, 1.0f);
+        }
+    }
+    drawScrew (g, { pb.getX() + 14, pb.getY() + 14 }, 7.0f);
+    drawScrew (g, { pb.getRight() - 14, pb.getY() + 14 }, 7.0f);
+    drawScrew (g, { pb.getX() + 14, pb.getBottom() - 14 }, 7.0f);
+    drawScrew (g, { pb.getRight() - 14, pb.getBottom() - 14 }, 7.0f);
+
+    // knob labels
+    g.setColour (silk);
+    g.setFont (silkFont (13.0f));
+    for (auto& k : knobs)
+    {
+        const auto b = k.slider.getBounds().toFloat();
+        const float h = k.id == brume::id::filter ? 16.0f : 18.0f;
+        g.drawText (k.label, juce::Rectangle<float> (b.getCentreX() - 60.0f, b.getY() - h - 2.0f, 120.0f, h), juce::Justification::centred);
+    }
+
+    // small TAP label + LED under TEMPO
+    {
+        const auto t = tapSmall.getBounds().toFloat();
+        g.setFont (silkFont (10.5f));
+        g.setColour (silk.withAlpha (0.85f));
+        g.drawText ("TAP", juce::Rectangle<float> (t.getX(), t.getY(), t.getWidth() - 22.0f, t.getHeight()), juce::Justification::centredRight);
+        drawLed (g, { t.getRight() - 12.0f, t.getCentreY() }, 5.0f, ledGreen, tapLedOn);
+    }
+
+    // brand
+    g.setColour (juce::Colours::black.withAlpha (0.18f));
+    g.setFont (silkFont (72.0f, 0.08f));
+    g.drawText ("BRUME", juce::Rectangle<float> (pb.getX(), pb.getY() + 282.0f, pb.getWidth(), 76.0f), juce::Justification::centred);
+    g.setColour (silk);
+    g.drawText ("BRUME", juce::Rectangle<float> (pb.getX(), pb.getY() + 280.0f, pb.getWidth(), 76.0f), juce::Justification::centred);
+    g.setFont (silkFont (10.5f, 0.32f));
+    g.setColour (silk.withAlpha (0.85f));
+    g.drawText ("STEREO REVERB  -  NOISE", juce::Rectangle<float> (pb.getX(), pb.getY() + 354.0f, pb.getWidth(), 16.0f), juce::Justification::centred);
+
+    // footswitch LEDs and labels
+    const auto on = onSwitch.getBounds().toFloat();
+    const auto tp = tapSwitch.getBounds().toFloat();
+    drawLed (g, { on.getCentreX(), on.getY() - 12.0f }, 6.0f, ledRed, onLed);
+    drawLed (g, { tp.getCentreX(), tp.getY() - 12.0f }, 6.0f, ledGreen, tapLedOn);
+    g.setFont (silkFont (11.0f));
+    g.setColour (silk);
+    g.drawText ("ON / OFF", juce::Rectangle<float> (on.getX() - 20.0f, on.getBottom() + 4.0f, on.getWidth() + 40.0f, 14.0f), juce::Justification::centred);
+    g.drawText ("TAP", juce::Rectangle<float> (tp.getX() - 20.0f, tp.getBottom() + 4.0f, tp.getWidth() + 40.0f, 14.0f), juce::Justification::centred);
+
+    // readout
+    auto ro = juce::Rectangle<float> (20.0f, 664.0f, 400.0f, 40.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.22f));
+    g.fillRoundedRectangle (ro, 9.0f);
+    g.setColour (line);
+    g.drawRoundedRectangle (ro, 9.0f, 1.0f);
+    g.setFont (juce::Font (juce::FontOptions (13.0f)));
+    g.setColour (amber);
+    g.drawText (readoutName, ro.reduced (14.0f, 0.0f), juce::Justification::centredLeft);
+    g.setColour (ink);
+    g.drawText (readoutValue, ro.reduced (14.0f, 0.0f).withTrimmedLeft (100.0f), juce::Justification::centredRight);
+}

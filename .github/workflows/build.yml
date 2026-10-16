@@ -1,0 +1,50 @@
+name: Build Brume
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-14
+            name: macOS
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --target Brume_VST3 Brume_Standalone ${{ matrix.name == 'macOS' && 'Brume_AU' || '' }} --parallel 4
+
+      - name: Package (Windows)
+        if: matrix.name == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item -Recurse build/Brume_artefacts/Release/VST3/Brume.vst3 dist/
+          Copy-Item build/Brume_artefacts/Release/Standalone/Brume.exe dist/
+          Copy-Item INSTALL.txt dist/
+
+      - name: Package (macOS)
+        if: matrix.name == 'macOS'
+        run: |
+          mkdir -p dist
+          cp -R build/Brume_artefacts/Release/VST3/Brume.vst3 dist/
+          cp -R build/Brume_artefacts/Release/AU/Brume.component dist/
+          cp -R build/Brume_artefacts/Release/Standalone/Brume.app dist/
+          cp INSTALL.txt dist/
+          # ad-hoc signature so macOS accepts the bundles locally
+          codesign --force --deep -s - dist/Brume.vst3 dist/Brume.component dist/Brume.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Brume-${{ matrix.name }}
+          path: dist
