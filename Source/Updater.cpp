@@ -245,7 +245,8 @@ bool Updater::downloadAndInstall()
            << "fi\n"
            << "exit 0\n";
     auto scriptFile = tmp.getChildFile ("install.sh");
-    if (! scriptFile.replaceWithText (script)) return false;
+    // Unix line endings: JUCE writes \r\n by default, which breaks /bin/sh
+    if (! scriptFile.replaceWithText (script, false, false, "\n")) return false;
 
     juce::ChildProcess installer;
     if (! installer.start (juce::StringArray { "/bin/sh", scriptFile.getFullPathName() }))
@@ -262,7 +263,7 @@ bool Updater::downloadAndInstall()
         newApp.revealToUser();   // fallback: the new app is shown in the Finder, ready to drag into Applications
         Status f;
         f.state = Status::State::failed;
-        f.message = fr ("macOS a bloqué le remplacement : glisse la nouvelle Brume.app (ouverte dans le Finder) dans Applications.");
+        f.message = fr ("Installation impossible : glisse la nouvelle Brume.app (ouverte dans le Finder) dans Applications. Détails : ~/Library/Logs/Brume-update.log");
         post (f);
         return true;   // handled: do not quit
     }
