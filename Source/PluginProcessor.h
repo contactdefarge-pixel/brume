@@ -83,6 +83,10 @@ public:
     void setLearnTarget (int t)       { learnTarget.store (t); }
     int  getLearnTarget() const       { return learnTarget.load(); }
     int  popLearnedTarget()           { return learnedTarget.exchange (-1); }
+    // MIDI monitor: last control message received (any input), for troubleshooting controllers
+    int  getMidiActivity() const      { return midiActivity.load(); }
+    int  getLastMidiCode() const      { return lastMidiCode.load(); }
+    int  getLastMidiValue() const     { return lastMidiValue.load(); }
     int  getMidiMapping (int t) const { return midiMap[(size_t) t].load(); }
     void clearMidiMapping (int t)     { midiMap[(size_t) t].store (-1); }
     static juce::String describeMapping (int code);
@@ -154,6 +158,7 @@ private:
     std::array<std::atomic<int>, numMidiTargets> midiMap;
     std::array<int, numMidiTargets> midiLast {};
     std::atomic<int> learnTarget { -1 }, learnedTarget { -1 };
+    std::atomic<int> midiActivity { 0 }, lastMidiCode { -1 }, lastMidiValue { 0 };
     juce::int64 sampleCounter = 0;
     std::array<juce::int64, 8> midiTaps {};
 

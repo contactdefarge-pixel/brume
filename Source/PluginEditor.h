@@ -99,6 +99,7 @@ private:
     juce::TextButton midiButton { "MIDI" };
     juce::TextButton recButton { "REC" };
     bool wasRecording = false;
+    int shownMidiActivity = 0;
     LearnOverlay overlay { *this };
     UpdateBanner updateBanner;
     bool learnMode = false;

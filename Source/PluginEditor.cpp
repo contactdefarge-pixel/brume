@@ -279,6 +279,19 @@ void BrumeEditor::timerCallback()
             if (txt != readoutValue) { readoutValue = txt; repaint (0, 650, kW, 70); }
         }
 
+    // MIDI monitor: show every control message that reaches Brume
+    if (const int act = proc.getMidiActivity(); act != shownMidiActivity)
+    {
+        shownMidiActivity = act;
+        if (! proc.isRecording())
+        {
+            readoutName = "MIDI IN";
+            readoutValue = BrumeProcessor::describeMapping (proc.getLastMidiCode()) + "  =  " + juce::String (proc.getLastMidiValue());
+            lastParam.clear();
+            repaint (0, 650, kW, 70);
+        }
+    }
+
     if (proc.isRecording())
     {
         const int secs = (int) proc.getRecordedSeconds();

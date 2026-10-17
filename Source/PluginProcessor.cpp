@@ -437,6 +437,7 @@ void BrumeProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 sampleP
     else return;
 
     const int code = (type << 16) | (m.getChannel() << 8) | num;
+    lastMidiCode.store (code); lastMidiValue.store (val); ++midiActivity;
 
     const int lt = learnTarget.load();
     if (lt >= 0)
