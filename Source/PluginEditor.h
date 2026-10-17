@@ -9,15 +9,16 @@ namespace brume::ui
     const juce::Colour deskHi    { 0xff23292d };
     const juce::Colour ink       { 0xffece6d6 };
     const juce::Colour inkDim    { 0xff9aa19a };
-    const juce::Colour encl      { 0xff7f8f72 };
-    const juce::Colour enclHi    { 0xff9aa88c };
-    const juce::Colour enclLo    { 0xff5d6b53 };
-    const juce::Colour silk      { 0xfff4ecd6 };
-    const juce::Colour knob      { 0xff2a221d };
-    const juce::Colour knobHi    { 0xff4a3d34 };
+    const juce::Colour encl      { 0xffd2d5d8 };   // light grey metal
+    const juce::Colour enclHi    { 0xffeef0f2 };
+    const juce::Colour enclLo    { 0xffaeb3b8 };
+    const juce::Colour silk      { 0xff1f2123 };   // print on the enclosure
+    const juce::Colour pointer   { 0xfff7f7f5 };
+    const juce::Colour knob      { 0xff0c0d0e };
+    const juce::Colour knobHi    { 0xff3a3d41 };
     const juce::Colour ledRed    { 0xffff4d2e };
     const juce::Colour ledGreen  { 0xff5fe08a };
-    const juce::Colour ledOff    { 0xff3a2c26 };
+    const juce::Colour ledOff    { 0xff5d6166 };
     const juce::Colour amber     { 0xffffb547 };
     const juce::Colour line      { 0xff3a4246 };
 }

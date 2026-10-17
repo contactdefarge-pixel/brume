@@ -62,33 +62,33 @@ void BrumeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
         g.drawLine ({ p1, p2 }, i == 0 || i == 10 || i == 5 ? 1.6f : 1.0f);
     }
 
-    // shadow
-    g.setColour (juce::Colours::black.withAlpha (0.4f));
-    g.fillEllipse (c.x - rKnob, c.y - rKnob + size * 0.05f, rKnob * 2, rKnob * 2);
+    // shadow on the enclosure
+    g.setColour (juce::Colours::black.withAlpha (0.28f));
+    g.fillEllipse (c.x - rKnob * 1.02f, c.y - rKnob + size * 0.06f, rKnob * 2.04f, rKnob * 2.04f);
 
-    // knurled skirt
-    g.setGradientFill (juce::ColourGradient (knobHi, c.x, c.y - rKnob * 0.6f, knob, c.x, c.y + rKnob, false));
+    // black skirt with a soft bevel
+    g.setGradientFill (juce::ColourGradient (knobHi, c.x - rKnob * 0.5f, c.y - rKnob * 0.8f, knob, c.x + rKnob * 0.3f, c.y + rKnob, false));
     g.fillEllipse (c.x - rKnob, c.y - rKnob, rKnob * 2, rKnob * 2);
-    g.setColour (juce::Colours::black.withAlpha (0.45f));
-    for (int i = 0; i < 48; ++i)
+
+    // glossy cap
+    const float rCap = rKnob * 0.80f;
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2e31), c.x - rCap * 0.35f, c.y - rCap * 0.55f, knob, c.x + rCap * 0.4f, c.y + rCap * 0.7f, true));
+    g.fillEllipse (c.x - rCap, c.y - rCap, rCap * 2, rCap * 2);
+    g.setColour (juce::Colours::white.withAlpha (0.10f));
+    g.drawEllipse (c.x - rCap, c.y - rCap, rCap * 2, rCap * 2, 1.0f);
     {
-        const float a = juce::MathConstants<float>::twoPi * (float) i / 48.0f;
-        g.drawLine ({ c.getPointOnCircumference (rKnob * 0.86f, a), c.getPointOnCircumference (rKnob, a) }, 1.0f);
+        juce::Path shine;   // specular arc, top-left
+        shine.addCentredArc (c.x, c.y, rCap * 0.82f, rCap * 0.82f, 0.0f, -2.2f, -0.6f, true);
+        g.setColour (juce::Colours::white.withAlpha (0.13f));
+        g.strokePath (shine, juce::PathStrokeType (rCap * 0.12f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // cap
-    const float rCap = rKnob * 0.84f;
-    g.setGradientFill (juce::ColourGradient (knobHi, c.x, c.y - rCap * 0.7f, knob, c.x, c.y + rCap * 0.6f, true));
-    g.fillEllipse (c.x - rCap, c.y - rCap, rCap * 2, rCap * 2);
-    g.setColour (juce::Colours::white.withAlpha (0.08f));
-    g.drawEllipse (c.x - rCap, c.y - rCap, rCap * 2, rCap * 2, 1.0f);
-
-    // pointer
+    // white pointer
     const float angle = startAngle + pos * (endAngle - startAngle);
     juce::Path ptr;
-    const float pw = std::max (2.5f, rKnob * 0.16f);
-    ptr.addRoundedRectangle (-pw * 0.5f, -rCap + rCap * 0.08f, pw, rCap * 0.62f, pw * 0.5f);
-    g.setColour (silk);
+    const float pw = std::max (3.0f, rKnob * 0.19f);
+    ptr.addRoundedRectangle (-pw * 0.5f, -rCap * 0.95f, pw, rCap * 0.72f, pw * 0.5f);
+    g.setColour (pointer);
     g.fillPath (ptr, juce::AffineTransform::rotation (angle).translated (c));
 }
 
@@ -114,32 +114,36 @@ void BrumeLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& 
 
 void Footswitch::paintButton (juce::Graphics& g, bool, bool down)
 {
+    // black arcade-style push button: bezel ring + slightly domed cap
     auto r = getLocalBounds().toFloat().reduced (4.0f);
-    if (down) r = r.translated (0.0f, 2.0f).reduced (1.0f);
     const auto c = r.getCentre();
     const float R = std::min (r.getWidth(), r.getHeight()) * 0.5f;
 
-    g.setColour (juce::Colours::black.withAlpha (0.5f));
-    g.fillEllipse (c.x - R, c.y - R + 6.0f, R * 2, R * 2);
+    g.setColour (juce::Colours::black.withAlpha (0.30f));
+    g.fillEllipse (c.x - R, c.y - R + 5.0f, R * 2, R * 2);
 
-    juce::ColourGradient ring (juce::Colour (0xffc9cbc7), c.x - R * 0.5f, c.y - R * 0.7f, juce::Colour (0xff2a2c2b), c.x + R * 0.6f, c.y + R, false);
-    ring.addColour (0.45, juce::Colour (0xff6d706f));
-    g.setGradientFill (ring);
+    // bezel
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3d4044), c.x - R * 0.6f, c.y - R * 0.8f,
+                                             juce::Colour (0xff050506), c.x + R * 0.5f, c.y + R, false));
     g.fillEllipse (c.x - R, c.y - R, R * 2, R * 2);
+    g.setColour (juce::Colours::white.withAlpha (0.12f));
+    g.drawEllipse (c.x - R + 1.0f, c.y - R + 1.0f, R * 2 - 2.0f, R * 2 - 2.0f, 1.2f);
 
+    // gap
     const float r2 = R * 0.80f;
-    g.setColour (juce::Colour (0xff0f1010));
+    g.setColour (juce::Colour (0xff020203));
     g.fillEllipse (c.x - r2, c.y - r2, r2 * 2, r2 * 2);
 
-    const float r3 = R * 0.50f;
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff7f7f4), c.x - r3 * 0.3f, c.y - r3 * 0.5f,
-                                             juce::Colour (0xff6e7170), c.x + r3 * 0.6f, c.y + r3, true));
-    g.fillEllipse (c.x - r3, c.y - r3, r3 * 2, r3 * 2);
-    if (down)
-    {
-        g.setColour (juce::Colours::black.withAlpha (0.15f));
-        g.fillEllipse (c.x - r3, c.y - r3, r3 * 2, r3 * 2);
-    }
+    // cap (sinks a little when pressed)
+    const float r3 = R * (down ? 0.72f : 0.75f);
+    const float dy = down ? 1.5f : 0.0f;
+    g.setGradientFill (juce::ColourGradient (juce::Colour (down ? 0xff1c1e20 : 0xff26292c), c.x - r3 * 0.4f, c.y - r3 * 0.6f + dy,
+                                             juce::Colour (0xff070708), c.x + r3 * 0.5f, c.y + r3 * 0.8f + dy, true));
+    g.fillEllipse (c.x - r3, c.y - r3 + dy, r3 * 2, r3 * 2);
+    juce::Path shine;
+    shine.addCentredArc (c.x, c.y + dy, r3 * 0.80f, r3 * 0.80f, 0.0f, -2.4f, -0.5f, true);
+    g.setColour (juce::Colours::white.withAlpha (down ? 0.10f : 0.18f));
+    g.strokePath (shine, juce::PathStrokeType (r3 * 0.08f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 //==============================================================================
@@ -459,7 +463,7 @@ void BrumeEditor::paint (juce::Graphics& g)
     // enclosure
     g.setColour (juce::Colours::black.withAlpha (0.5f));
     g.fillRoundedRectangle (pb.translated (0.0f, 10.0f).expanded (2.0f), 24.0f);
-    g.setColour (juce::Colour (0xff3e4838));
+    g.setColour (juce::Colour (0xff868b90));
     g.fillRoundedRectangle (pb.translated (0.0f, 4.0f), 22.0f);
     {
         juce::ColourGradient body (enclHi, pb.getX() + pb.getWidth() * 0.3f, pb.getY(), enclLo, pb.getX() + pb.getWidth() * 0.6f, pb.getBottom(), false);
@@ -469,15 +473,16 @@ void BrumeEditor::paint (juce::Graphics& g)
         g.setColour (juce::Colours::white.withAlpha (0.18f));
         g.drawRoundedRectangle (pb.reduced (1.0f), 21.0f, 1.2f);
     }
-    // powder-coat grain
+    // brushed metal
     {
+        juce::Graphics::ScopedSaveState ss (g);
+        g.reduceClipRegion (pb.toNearestInt());
         juce::Random rnd (7);
-        for (int i = 0; i < 2600; ++i)
+        for (float y = pb.getY(); y < pb.getBottom(); y += 1.0f)
         {
-            const float x = pb.getX() + rnd.nextFloat() * pb.getWidth();
-            const float y = pb.getY() + rnd.nextFloat() * pb.getHeight();
-            g.setColour ((rnd.nextBool() ? juce::Colours::white : juce::Colours::black).withAlpha (0.05f));
-            g.fillRect (x, y, 1.0f, 1.0f);
+            const float a = rnd.nextFloat() * 0.07f;
+            g.setColour ((rnd.nextBool() ? juce::Colours::white : juce::Colours::black).withAlpha (a));
+            g.fillRect (pb.getX(), y, pb.getWidth(), 1.0f);
         }
     }
     drawScrew (g, { pb.getX() + 14, pb.getY() + 14 }, 7.0f);
@@ -519,9 +524,9 @@ void BrumeEditor::paint (juce::Graphics& g)
     }
 
     // brand
-    g.setColour (juce::Colours::black.withAlpha (0.18f));
+    g.setColour (juce::Colours::white.withAlpha (0.65f));
     g.setFont (silkFont (72.0f, 0.08f));
-    g.drawText ("BRUME", juce::Rectangle<float> (pb.getX(), pb.getY() + 282.0f, pb.getWidth(), 76.0f), juce::Justification::centred);
+    g.drawText ("BRUME", juce::Rectangle<float> (pb.getX(), pb.getY() + 281.5f, pb.getWidth(), 76.0f), juce::Justification::centred);
     g.setColour (silk);
     g.drawText ("BRUME", juce::Rectangle<float> (pb.getX(), pb.getY() + 280.0f, pb.getWidth(), 76.0f), juce::Justification::centred);
     g.setFont (silkFont (10.5f, 0.32f));
