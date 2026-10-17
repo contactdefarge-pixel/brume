@@ -61,6 +61,22 @@ int main()
     std::this_thread::sleep_for (std::chrono::milliseconds (300));
 
     double cpu = 0;
+    if (std::getenv ("BRUME_GRID"))
+    {
+        setParam (p, brume::id::tremolo, 0); setParam (p, brume::id::noise, 0); setParam (p, brume::id::on, 1); setParam (p, brume::id::wet, 1);
+        for (float l : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+        {
+            std::printf ("len %.2f:", l);
+            for (float c : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+            {
+                setParam (p, brume::id::length, l); setParam (p, brume::id::character, c);
+                std::printf (" %6.1f", render (p, fs, 4.0f, -16, 1.5f));
+            }
+            std::printf ("\n");
+        }
+        return 0;
+    }
+    setParam (p, brume::id::tremolo, 0);
     setParam (p, brume::id::on, 0);
     std::printf ("dry (off)            : %6.1f dB\n", render (p, fs, 2, -16, 1));
     setParam (p, brume::id::noise, 0); setParam (p, brume::id::on, 1);
@@ -140,6 +156,37 @@ int main()
         // stop sending: back to free mode after 0.5 s
         for (int k = 0; k < 30; ++k) { juce::MidiBuffer mb; p.processBlock (blk, mb); }
         std::printf ("clock stopped        : source %d (expect 0)\n", p.getSyncSource());
+    }
+
+    // no dropouts while turning Character / Length: wet level per 10 ms must stay smooth
+    {
+        setParam (p, brume::id::on, 1); setParam (p, brume::id::wet, 1); setParam (p, brume::id::noise, 0);
+        render (p, fs, 3, -16, 0.1f);
+        juce::AudioBuffer<float> blk (2, 480); juce::MidiBuffer mb; juce::Random r (3);
+        double minDb = 0, maxDb = -200;
+        for (int k = 0; k < 400; ++k)
+        {
+            setParam (p, brume::id::character, 0.5f + 0.5f * std::sin (k * 0.05f));
+            setParam (p, brume::id::length, 0.5f + 0.4f * std::cos (k * 0.031f));
+            for (int c = 0; c < 2; ++c) for (int i = 0; i < 480; ++i) blk.setSample (c, i, (r.nextFloat() * 2 - 1) * 0.27f);
+            p.processBlock (blk, mb);
+            const double db = rmsDb (blk);
+            if (k > 20) { minDb = std::min (minDb, db); maxDb = std::max (maxDb, db); }
+        }
+        std::printf ("sweep char/length    : wet level range %.1f .. %.1f dB (no dropout if the range is small)\n", minDb, maxDb);
+        setParam (p, brume::id::wet, 0);
+    }
+
+    // recorder
+    {
+        p.startRecording();
+        render (p, fs, 1.0f, -16, 0.1f);
+        p.stopRecording();
+        auto f = p.getLastRecording();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (f.createInputStream().release(), true));
+        std::printf ("recorder             : %s, %.2f s, %d ch\n", f.getFileName().toRawUTF8(), r ? r->lengthInSamples / r->sampleRate : 0.0, r ? (int) r->numChannels : 0);
+        f.deleteFile();
     }
 
     // editor snapshot

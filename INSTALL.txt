@@ -24,7 +24,11 @@ UTILISATION
 - Poser Brume sur une piste audio, un retour (mettre le switch sur WET) ou le Master.
 - ON / OFF : allume ou éteint l'effet. À l'arrêt, la queue de réverbe et le bruit
   s'éteignent naturellement selon LENGTH.
+- TREMOLO : hache tout l'effet (réverbe + bruit), le son d'origine reste intact. À zéro : pas de trémolo.
+- NOISE : bruit blanc envoyé dans la réverbe (et un peu en direct).
 - TAP : taper le tempo du trémolo (un cycle par frappe).
+- REC : enregistre ce qui sort de Brume (avec l'effet) en WAV dans Musique/Brume.
+  Utile avec Traktor, dont l'enregistreur capte le son avant Brume.
 - Tous les boutons sont automatisables dans Ableton (y compris On/Off).
 - MIDI LEARN : cliquer sur le bouton MIDI en bas à droite, cliquer sur un contrôle de la pédale,
   puis tourner ou appuyer sur le contrôle voulu de votre contrôleur. Clic droit = supprimer le lien.

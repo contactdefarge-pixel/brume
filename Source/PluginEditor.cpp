@@ -201,6 +201,34 @@ BrumeEditor::BrumeEditor (BrumeProcessor& p)
     midiButton.setTooltip ("MIDI learn");
     midiButton.onClick = [this] { setLearnMode (midiButton.getToggleState()); };
     addAndMakeVisible (midiButton);
+
+    recButton.setClickingTogglesState (true);
+    recButton.setColour (juce::TextButton::buttonColourId, juce::Colours::black.withAlpha (0.22f));
+    recButton.setColour (juce::TextButton::buttonOnColourId, ledRed);
+    recButton.setColour (juce::TextButton::textColourOffId, ink);
+    recButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+    recButton.setColour (juce::ComboBox::outlineColourId, line);
+    recButton.onClick = [this]
+    {
+        if (recButton.getToggleState())
+        {
+            if (! proc.startRecording())
+            {
+                recButton.setToggleState (false, juce::dontSendNotification);
+                readoutName = "REC"; readoutValue = "Could not create the file in Music/Brume";
+            }
+        }
+        else
+        {
+            proc.stopRecording();
+            readoutName = "SAVED";
+            readoutValue = proc.getLastRecording().getFileName();
+            proc.getLastRecording().revealToUser();
+        }
+        lastParam.clear();
+        repaint (0, 650, kW, 70);
+    };
+    addAndMakeVisible (recButton);
     addChildComponent (overlay);
     if (Updater::isSupported()) addChildComponent (updateBanner);
 
@@ -246,6 +274,17 @@ void BrumeEditor::timerCallback()
             const auto txt = lastParam == brume::id::tempo ? tempoText() : prm->getCurrentValueAsText();
             if (txt != readoutValue) { readoutValue = txt; repaint (0, 650, kW, 70); }
         }
+
+    if (proc.isRecording())
+    {
+        const int secs = (int) proc.getRecordedSeconds();
+        const auto txt = juce::String::formatted ("%d:%02d  -  Music/Brume", secs / 60, secs % 60);
+        if (txt != readoutValue || readoutName != "REC")
+        {
+            readoutName = "REC"; readoutValue = txt; lastParam.clear();
+            repaint (0, 650, kW, 70);
+        }
+    }
 
     const int sync = proc.getSyncSource();
     const int bpm10 = juce::roundToInt (proc.getSyncBpm() * 10.0f);
@@ -388,6 +427,7 @@ void BrumeEditor::resized()
     tapSwitch.setBounds (juce::Rectangle<int> (104, 104).withCentre ({ (int) (pb.getRight() - 120), (int) pb.getY() + 476 }));
 
     midiButton.setBounds (430, 664, 70, 40);
+    recButton.setBounds (360, 664, 62, 40);
     overlay.setBounds (0, 0, kW, 656);
     updateBanner.setBounds (0, 0, kW, 40);
 }
@@ -499,7 +539,7 @@ void BrumeEditor::paint (juce::Graphics& g)
     g.drawText ("TAP", juce::Rectangle<float> (tp.getX() - 20.0f, tp.getBottom() + 4.0f, tp.getWidth() + 40.0f, 14.0f), juce::Justification::centred);
 
     // readout
-    auto ro = juce::Rectangle<float> (20.0f, 664.0f, 400.0f, 40.0f);
+    auto ro = juce::Rectangle<float> (20.0f, 664.0f, 332.0f, 40.0f);
     g.setColour (juce::Colours::black.withAlpha (0.22f));
     g.fillRoundedRectangle (ro, 9.0f);
     g.setColour (line);

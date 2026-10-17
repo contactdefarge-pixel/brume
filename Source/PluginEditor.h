@@ -96,6 +96,8 @@ private:
     bool tapLedOn = false, onLed = false;
 
     juce::TextButton midiButton { "MIDI" };
+    juce::TextButton recButton { "REC" };
+    bool wasRecording = false;
     LearnOverlay overlay { *this };
     UpdateBanner updateBanner;
     bool learnMode = false;
