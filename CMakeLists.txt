@@ -43,7 +43,10 @@ juce_add_plugin(Brume
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE
     VST3_CATEGORIES Fx Reverb
-    AU_MAIN_TYPE kAudioUnitType_Effect)
+    AU_MAIN_TYPE kAudioUnitType_Effect
+    # macOS only lets an app read an audio input (BlackHole, a sound card) once it has this permission
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Brume a besoin de l'entree audio pour traiter le son de Traktor (BlackHole).")
 
 target_sources(Brume PRIVATE
     Source/PluginProcessor.cpp
