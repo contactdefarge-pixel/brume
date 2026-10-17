@@ -60,6 +60,21 @@ juce::String Updater::currentVersion()
 void Updater::checkInBackground()
 {
     if (! isSupported() || isThreadRunning()) return;
+
+    auto log = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Logs/Brume-update.log");
+    if (log.existsAsFile())
+    {
+        const auto text = log.loadFileAsString();
+        log.moveFileTo (log.withFileExtension ("previous.log"));
+        if (text.contains ("UPDATE_FAILED"))
+        {
+            Status st;
+            st.state = Status::State::failed;
+            st.message = fr ("macOS a bloqué le remplacement : glisse la nouvelle Brume.app (ouverte dans le Finder) dans Applications.");
+            post (st);
+            return;
+        }
+    }
     job = Job::check;
     startThread();
 }
@@ -98,6 +113,7 @@ void Updater::run()
             Status s;
             s.state = Status::State::failed;
             s.message = fr ("La mise à jour a échoué. Réessaie plus tard ou télécharge-la sur GitHub.");
+            s.latestVersion = latestTag;
             post (s);
         }
     }
@@ -208,21 +224,39 @@ bool Updater::downloadAndInstall()
     if (! app.getFullPathName().endsWith (".app")) return false;
     const auto q = [] (const juce::File& f) { return f.getFullPathName().quoted(); };
     auto src = tmp.getChildFile ("Brume");
+    const int pid = (int) getpid();
     juce::String script;
     script << "#!/bin/sh\n"
-           << "while kill -0 " << (int) getpid() << " 2>/dev/null; do sleep 0.3; done\n"
-           << "rm -rf " << q (app) << " && /usr/bin/ditto " << q (newApp) << " " << q (app) << "\n"
+           << "LOG=\"$HOME/Library/Logs/Brume-update.log\"\n"
+           << "exec >\"$LOG\" 2>&1\n"
+           << "set -x\n"
+           << "date\n"
+           // wait for Brume to quit (15 s max), then make sure it is gone
+           << "i=0; while kill -0 " << pid << " 2>/dev/null && [ $i -lt 50 ]; do sleep 0.3; i=$((i+1)); done\n"
+           << "kill -9 " << pid << " 2>/dev/null; sleep 0.5\n"
+           // plugins: user folder, never blocked
            << "P=\"$HOME/Library/Audio/Plug-Ins\"\n"
            << "mkdir -p \"$P/VST3\" \"$P/Components\"\n"
-           << "rm -rf \"$P/VST3/Brume.vst3\" && /usr/bin/ditto " << q (src.getChildFile ("Brume.vst3")) << " \"$P/VST3/Brume.vst3\"\n"
-           << "rm -rf \"$P/Components/Brume.component\" && /usr/bin/ditto " << q (src.getChildFile ("Brume.component")) << " \"$P/Components/Brume.component\"\n"
-           << "/usr/bin/xattr -dr com.apple.quarantine " << q (app) << " \"$P/VST3/Brume.vst3\" \"$P/Components/Brume.component\" 2>/dev/null\n"
-           << "/usr/bin/open " << q (app) << "\n";
+           << "rm -rf \"$P/VST3/Brume.vst3\"; /usr/bin/ditto " << q (src.getChildFile ("Brume.vst3")) << " \"$P/VST3/Brume.vst3\"\n"
+           << "rm -rf \"$P/Components/Brume.component\"; /usr/bin/ditto " << q (src.getChildFile ("Brume.component")) << " \"$P/Components/Brume.component\"\n"
+           << "/usr/bin/xattr -dr com.apple.quarantine \"$P/VST3/Brume.vst3\" \"$P/Components/Brume.component\"\n"
+           // the app: copy next to the old one, then swap; macOS may refuse to touch an app in /Applications
+           << "APP=" << q (app) << "\n"
+           << "if /usr/bin/ditto " << q (newApp) << " \"$APP.new\" && rm -rf \"$APP\" && mv \"$APP.new\" \"$APP\"; then\n"
+           << "  /usr/bin/xattr -dr com.apple.quarantine \"$APP\"\n"
+           << "  echo UPDATE_OK\n"
+           << "  /usr/bin/open \"$APP\"\n"
+           << "else\n"
+           << "  echo UPDATE_FAILED\n"
+           << "  rm -rf \"$APP.new\"\n"
+           << "  [ -d \"$APP\" ] && /usr/bin/open \"$APP\"\n"
+           << "  /usr/bin/open -R " << q (newApp) << "\n"   // show the new app in the Finder as a fallback
+           << "fi\n";
     auto scriptFile = tmp.getChildFile ("install.sh");
     if (! scriptFile.replaceWithText (script)) return false;
 
     juce::ChildProcess launcher;
-    if (! launcher.start (juce::StringArray { "/bin/sh", "-c", "nohup /bin/sh " + scriptFile.getFullPathName().quoted() + " >/dev/null 2>&1 &" }))
+    if (! launcher.start (juce::StringArray { "/bin/sh", "-c", "/usr/bin/nohup /bin/sh " + scriptFile.getFullPathName().quoted() + " >/dev/null 2>&1 </dev/null &" }, 0))
         return false;
     launcher.waitForProcessToFinish (5000);
 
@@ -245,7 +279,8 @@ UpdateBanner::UpdateBanner()
     {
         status = s;
         setVisible (s.state != Updater::Status::State::idle);
-        button.setVisible (s.state == Updater::Status::State::available || s.state == Updater::Status::State::failed);
+        button.setVisible (s.state == Updater::Status::State::available
+                           || (s.state == Updater::Status::State::failed && s.latestVersion.isNotEmpty()));
         button.setEnabled (true);
         if (s.state == Updater::Status::State::failed) button.setButtonText (fr ("Réessayer"));
         repaint();
