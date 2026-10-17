@@ -12,6 +12,16 @@ namespace brume
     inline float lowCutHz (float v)       { return 20.0f * std::pow (1000.0f, v); }     // 20 Hz .. 20 kHz
     inline float tempoFromRate (float hz) { return std::log (hz / 0.2f) / std::log (200.0f); }
 
+    // When synced (MIDI clock or host tempo), the Tempo knob picks a note division instead of a rate.
+    struct Division { double cyclesPerBeat; const char* label; };
+    inline const Division& division (float v)
+    {
+        static const Division d[] = { { 0.25, "1 bar" }, { 0.5, "1/2" }, { 1.0, "1/4" }, { 1.5, "1/4T" }, { 2.0, "1/8" },
+                                      { 3.0, "1/8T" }, { 4.0, "1/16" }, { 6.0, "1/16T" }, { 8.0, "1/32" }, { 16.0, "1/64" } };
+        const int i = std::max (0, std::min (9, (int) std::lround (v * 9.0f)));
+        return d[i];
+    }
+
     namespace id
     {
         static constexpr const char* reverb    = "reverb";
@@ -75,6 +85,11 @@ public:
     void clearMidiMapping (int t)     { midiMap[(size_t) t].store (-1); }
     static juce::String describeMapping (int code);
 
+    // ---- tempo sync ----
+    // 0 = free (Tempo knob in Hz), 1 = MIDI clock (e.g. Traktor), 2 = host tempo (e.g. Ableton)
+    int   getSyncSource() const { return syncSource.load(); }
+    float getSyncBpm() const    { return syncBpm.load(); }
+
     juce::AudioProcessorValueTreeState apvts;
 
 private:
@@ -83,6 +98,7 @@ private:
     void rebuildImpulseResponse();
     void updateFilters (bool force);
     void handleMidi (const juce::MidiMessage&, juce::int64 samplePos);
+    void processChunk (juce::AudioBuffer<float>&, int syncSrc, double bpm, double beatAtStart);
     void tapAtSample (juce::int64 samplePos);
     void setParamFromMidi (const char* paramId, float normalised);
 
@@ -128,6 +144,12 @@ private:
     std::atomic<int> learnTarget { -1 }, learnedTarget { -1 };
     juce::int64 sampleCounter = 0;
     std::array<juce::int64, 8> midiTaps {};
+
+    // tempo sync state (audio thread)
+    double clockTickSamples = 0.0, clockTicks = 0.0, beatPos = 0.0;
+    juce::int64 lastClockSample = -1;
+    std::atomic<int> syncSource { 0 };
+    std::atomic<float> syncBpm { 0.0f };
     int numMidiTaps = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BrumeProcessor)

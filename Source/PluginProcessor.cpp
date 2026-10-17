@@ -125,7 +125,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout BrumeProcessor::createLayout
     ps.push_back (std::make_unique<P> (juce::ParameterID { id::tremolo, 1 }, "Tremolo", r, 0.8f, A().withStringFromValueFunction (pct)));
     ps.push_back (std::make_unique<P> (juce::ParameterID { id::tempo, 1 }, "Tempo", r, 0.568f,
         A().withStringFromValueFunction ([] (float v, int) {
-            const float hz = tremoloRateHz (v); return juce::String (hz, hz < 10.0f ? 2 : 1) + " Hz"; })));
+            const float hz = tremoloRateHz (v);
+            return juce::String (hz, hz < 10.0f ? 2 : 1) + " Hz | sync " + division (v).label; })));
     ps.push_back (std::make_unique<P> (juce::ParameterID { id::filter, 1 }, "Filter", r, 0.3f,
         A().withStringFromValueFunction ([] (float v, int) {
             const float hz = lowCutHz (v);
@@ -246,21 +247,52 @@ void BrumeProcessor::updateFilters (bool force)
 void BrumeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+    const juce::int64 blockStart = sampleCounter;
     for (const auto meta : midi)
-        handleMidi (meta.getMessage(), sampleCounter + meta.samplePosition);
+        handleMidi (meta.getMessage(), blockStart + meta.samplePosition);
     midi.clear();
     sampleCounter += buffer.getNumSamples();
+
+    // tempo source: MIDI clock first (Traktor), then the host's tempo (Ableton), else free-running
+    int src = 0;
+    double bpm = 0.0, beatAtStart = beatPos;
+    if (clockTickSamples > 0.0 && lastClockSample >= 0 && blockStart - lastClockSample < (juce::int64) (0.5 * fs))
+    {
+        src = 1;
+        bpm = fs * 60.0 / (clockTickSamples * 24.0);
+        beatAtStart = (clockTicks + (double) (blockStart - lastClockSample) / clockTickSamples) / 24.0;
+    }
+    else if (auto* ph = getPlayHead())
+    {
+        if (auto pos = ph->getPosition())
+            if (auto hostBpm = pos->getBpm(); hostBpm.hasValue() && *hostBpm > 1.0)
+            {
+                src = 2;
+                bpm = *hostBpm;
+                if (pos->getIsPlaying())
+                    if (auto ppq = pos->getPpqPosition()) beatAtStart = *ppq;
+            }
+    }
+    syncSource.store (src);
+    syncBpm.store ((float) bpm);
+
+    // process in slices no longer than the size we prepared for (some hosts send bigger blocks)
+    const int total = buffer.getNumSamples();
+    const double beatInc = bpm / 60.0 / fs;
+    for (int start = 0; start < total; start += maxBlock)
+    {
+        const int len = std::min (maxBlock, total - start);
+        juce::AudioBuffer<float> slice (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), start, len);
+        processChunk (slice, src, bpm, src == 0 ? beatPos : beatAtStart + start * beatInc);
+    }
+}
+
+void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, double bpm, double beatAtStart)
+{
     const int n = buffer.getNumSamples();
     const int numIn = getTotalNumInputChannels();
     const int numOut = getTotalNumOutputChannels();
     if (n == 0 || numOut == 0) return;
-
-    if (n > sendBuf.getNumSamples())   // host sent a bigger block than announced
-    {
-        sendBuf.setSize (2, n, false, false, true);
-        noiseBuf.setSize (2, n, false, false, true);
-        washBuf.setSize (2, n, false, false, true);
-    }
 
     // targets
     const float rv = pReverb->load();
@@ -330,12 +362,23 @@ void BrumeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     // 3) noise (direct + wash) with tremolo, summed into the wet bus, then Air and low cut
     const auto* wL = washBuf.getReadPointer (0); const auto* wR = washBuf.getReadPointer (1);
     const double inc = rate / fs;
-    if (tapReset.exchange (false)) tremPhase = 0.0;
+    if (tapReset.exchange (false) && src == 0) tremPhase = 0.0;
+    const double cyclesPerBeat = brume::division (pTempo->load()).cyclesPerBeat;
+    const double beatInc = bpm / 60.0 / fs;
     for (int i = 0; i < n; ++i)
     {
         tremDepth = tTrem + (tremDepth - tTrem) * cParam;
-        tremPhase += inc;
-        if (tremPhase >= 1.0) tremPhase -= 1.0;
+        if (src > 0)
+        {
+            // locked to the beat grid: the cycle restarts on the beat
+            const double c = (beatAtStart + i * beatInc) * cyclesPerBeat;
+            tremPhase = c - std::floor (c);
+        }
+        else
+        {
+            tremPhase += inc;
+            if (tremPhase >= 1.0) tremPhase -= 1.0;
+        }
         const float trem = 1.0f - tremDepth * 0.5f + tremDepth * 0.5f * (float) std::sin (juce::MathConstants<double>::twoPi * tremPhase);
 
         float l = sL[i] + (nL[i] * kNoiseDirect + wL[i] * kNoiseWash) * trem;
@@ -346,6 +389,7 @@ void BrumeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         sR[i] = r * kWetGain;
     }
     tremPhaseUi.store ((float) tremPhase);
+    beatPos = beatAtStart + n * beatInc;
 
     // 4) output = dry (unless WET) + wet bus
     float* outL = buffer.getWritePointer (0);
@@ -374,6 +418,7 @@ void BrumeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 //==============================================================================
 void BrumeProcessor::tap()
 {
+    if (syncSource.load() != 0) return;   // tempo comes from the clock
     const double now = juce::Time::getMillisecondCounterHiRes();
     for (int i = taps.size(); --i >= 0;)
         if (now - taps[i] > 2200.0) taps.remove (i);
@@ -419,6 +464,23 @@ void BrumeProcessor::setParamFromMidi (const char* paramId, float normalised)
 
 void BrumeProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos)
 {
+    // MIDI clock (24 ticks per beat), e.g. sent by Traktor
+    if (m.isMidiClock())
+    {
+        if (lastClockSample >= 0)
+        {
+            const double d = (double) (samplePos - lastClockSample);
+            if (d > 0.0 && d < fs * 0.25)
+                clockTickSamples = clockTickSamples <= 0.0 ? d : clockTickSamples * 0.92 + d * 0.08;
+        }
+        lastClockSample = samplePos;
+        clockTicks += 1.0;
+        return;
+    }
+    if (m.isMidiStart())            { clockTicks = -1.0; return; }   // the next tick is beat 1
+    if (m.isSongPositionPointer())  { clockTicks = m.getSongPositionPointerMidiBeat() * 6.0 - 1.0; return; }
+    if (m.isMidiContinue() || m.isMidiStop()) return;
+
     int type = 0, num = 0, val = 0;
     if (m.isController())    { type = 1; num = m.getControllerNumber(); val = m.getControllerValue(); }
     else if (m.isNoteOn())   { type = 2; num = m.getNoteNumber(); val = 127; }
@@ -468,6 +530,7 @@ void BrumeProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 sampleP
 
 void BrumeProcessor::tapAtSample (juce::int64 samplePos)
 {
+    if (syncSource.load() != 0) return;
     // same rule as the TAP footswitch, timed with the audio clock for accuracy
     const juce::int64 maxGap = (juce::int64) (2.2 * fs);
     if (numMidiTaps > 0 && samplePos - midiTaps[(size_t) numMidiTaps - 1] > maxGap)

@@ -97,6 +97,8 @@ private:
     juce::TextButton midiButton { "MIDI" };
     LearnOverlay overlay { *this };
     bool learnMode = false;
+    int shownSync = -1; int shownBpm10 = -1;
+    juce::String tempoText() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BrumeEditor)
 };

@@ -31,4 +31,14 @@ UTILISATION
   Dans la version autonome, activer d'abord le contrôleur dans Options > Audio/MIDI Settings.
 - Double-clic sur un bouton : valeur par défaut. Maj + glisser : réglage fin.
 
+SYNCHRO AVEC TRAKTOR (trémolo calé sur le tempo des morceaux)
+1. Traktor > Préférences > Controller Manager > Add... > Generic MIDI.
+   Out-Port : "Traktor Virtual Output"   In-Port : None
+2. Traktor > Préférences > External Sync : choisir EXT et cocher "Enable MIDI Clock".
+3. Dans le panneau Master Clock de Traktor (icône métronome), cliquer sur play/pause pour envoyer l'horloge.
+4. Dans Brume : Options > Audio/MIDI Settings > cocher "Traktor Virtual Output" dans les entrées MIDI.
+Brume affiche alors un badge "SYNC 124.0 1/8" près de TEMPO : le bouton TEMPO choisit la division
+(1 bar, 1/2, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/64) et le trémolo repart sur chaque temps.
+Sans horloge, TEMPO et TAP reviennent en mode libre (Hz). Dans Ableton, Brume suit le tempo du projet.
+
 Une version autonome (Brume.exe / Brume.app) est fournie pour tester sans Ableton.

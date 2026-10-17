@@ -122,6 +122,26 @@ int main()
         std::printf ("state restore map    : %s / %s\n", BrumeProcessor::describeMapping (p2.getMidiMapping (4)).toRawUTF8(), BrumeProcessor::describeMapping (p2.getMidiMapping (10)).toRawUTF8());
     }
 
+    // MIDI clock sync: 120 BPM = 24 ticks per 0.5 s -> one tick every 1000 samples at 48 kHz
+    {
+        juce::AudioBuffer<float> blk (2, 1000); blk.clear();
+        setParam (p, brume::id::tempo, 4.0f / 9.0f);   // division 1/8
+        { juce::MidiBuffer mb; mb.addEvent (juce::MidiMessage::midiStart(), 0); p.processBlock (blk, mb); }
+        float phaseAtBeat = -1;
+        for (int t = 0; t < 24 * 8; ++t)
+        {
+            juce::MidiBuffer mb; mb.addEvent (juce::MidiMessage::midiClock(), 0);
+            p.processBlock (blk, mb);
+            if (t == 24 * 8 - 25) phaseAtBeat = p.getTremoloPhase();
+        }
+        std::printf ("MIDI clock sync      : source %d, %.1f BPM (expect 1, 120.0), tempo text '%s'\n", p.getSyncSource(), p.getSyncBpm(),
+                     p.apvts.getParameter (brume::id::tempo)->getCurrentValueAsText().toRawUTF8());
+        std::printf ("phase at block end   : %.3f\n", phaseAtBeat);
+        // stop sending: back to free mode after 0.5 s
+        for (int k = 0; k < 30; ++k) { juce::MidiBuffer mb; p.processBlock (blk, mb); }
+        std::printf ("clock stopped        : source %d (expect 0)\n", p.getSyncSource());
+    }
+
     // editor snapshot
     setParam (p, brume::id::on, 1);
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());

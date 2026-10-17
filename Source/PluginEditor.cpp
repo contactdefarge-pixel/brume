@@ -222,7 +222,7 @@ void BrumeEditor::showParam (const juce::String& paramId)
     {
         lastParam = paramId;
         readoutName = prm->getName (32).toUpperCase();
-        readoutValue = prm->getCurrentValueAsText();
+        readoutValue = paramId == brume::id::tempo ? tempoText() : prm->getCurrentValueAsText();
         if (paramId == brume::id::on && prm->getValue() < 0.5f)
             readoutValue = "Off - the tail fades over " + proc.apvts.getParameter (brume::id::length)->getCurrentValueAsText();
         repaint (0, 650, kW, 70);
@@ -242,9 +242,17 @@ void BrumeEditor::timerCallback()
     if (lastParam.isNotEmpty() && lastParam != brume::id::on)
         if (auto* prm = proc.apvts.getParameter (lastParam))
         {
-            const auto txt = prm->getCurrentValueAsText();
+            const auto txt = lastParam == brume::id::tempo ? tempoText() : prm->getCurrentValueAsText();
             if (txt != readoutValue) { readoutValue = txt; repaint (0, 650, kW, 70); }
         }
+
+    const int sync = proc.getSyncSource();
+    const int bpm10 = juce::roundToInt (proc.getSyncBpm() * 10.0f);
+    if (sync != shownSync || (sync != 0 && std::abs (bpm10 - shownBpm10) >= 2))
+    {
+        shownSync = sync; shownBpm10 = bpm10;
+        repaint (knobs[6].slider.getBounds().expanded (110, 40));
+    }
 
     if (learnMode)
     {
@@ -258,6 +266,16 @@ void BrumeEditor::timerCallback()
         ++overlay.blink;
         overlay.repaint();
     }
+}
+
+juce::String BrumeEditor::tempoText() const
+{
+    const float v = proc.apvts.getRawParameterValue (brume::id::tempo)->load();
+    const int sync = proc.getSyncSource();
+    if (sync == 0)
+        return juce::String (brume::tremoloRateHz (v), 2) + " Hz (free)";
+    return juce::String (brume::division (v).label) + "  -  synced to " + juce::String (proc.getSyncBpm(), 1)
+         + " BPM (" + (sync == 1 ? "MIDI clock" : "host") + ")";
 }
 
 juce::Rectangle<int> BrumeEditor::targetBounds (int t) const
@@ -442,6 +460,20 @@ void BrumeEditor::paint (juce::Graphics& g)
         g.setColour (silk.withAlpha (0.85f));
         g.drawText ("TAP", juce::Rectangle<float> (t.getX(), t.getY(), t.getWidth() - 22.0f, t.getHeight()), juce::Justification::centredRight);
         drawLed (g, { t.getRight() - 12.0f, t.getCentreY() }, 5.0f, ledGreen, tapLedOn);
+
+        // sync badge: the tempo follows Traktor's MIDI clock or the host
+        if (proc.getSyncSource() != 0)
+        {
+            const auto kb = knobs[6].slider.getBounds().toFloat();
+            auto badge = juce::Rectangle<float> (kb.getX() - 96.0f, t.getY() + 1.0f, 84.0f, t.getHeight() - 2.0f);
+            g.setColour (amber.withAlpha (0.18f));
+            g.fillRoundedRectangle (badge, 5.0f);
+            g.setColour (amber);
+            g.drawRoundedRectangle (badge, 5.0f, 1.0f);
+            g.setFont (silkFont (10.0f, 0.06f));
+            g.drawText ("SYNC " + juce::String (proc.getSyncBpm(), 1) + "  " + brume::division (proc.apvts.getRawParameterValue (brume::id::tempo)->load()).label,
+                        badge, juce::Justification::centred);
+        }
     }
 
     // brand
