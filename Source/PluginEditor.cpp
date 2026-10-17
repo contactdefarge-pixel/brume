@@ -202,6 +202,7 @@ BrumeEditor::BrumeEditor (BrumeProcessor& p)
     midiButton.onClick = [this] { setLearnMode (midiButton.getToggleState()); };
     addAndMakeVisible (midiButton);
     addChildComponent (overlay);
+    if (Updater::isSupported()) addChildComponent (updateBanner);
 
     setSize (kW, kH);
     timerCallback();
@@ -388,6 +389,7 @@ void BrumeEditor::resized()
 
     midiButton.setBounds (430, 664, 70, 40);
     overlay.setBounds (0, 0, kW, 656);
+    updateBanner.setBounds (0, 0, kW, 40);
 }
 
 void BrumeEditor::paint (juce::Graphics& g)

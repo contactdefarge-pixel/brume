@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "Updater.h"
 
 namespace brume::ui
 {
@@ -96,6 +97,7 @@ private:
 
     juce::TextButton midiButton { "MIDI" };
     LearnOverlay overlay { *this };
+    UpdateBanner updateBanner;
     bool learnMode = false;
     int shownSync = -1; int shownBpm10 = -1;
     juce::String tempoText() const;

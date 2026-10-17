@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
-project(Brume VERSION 1.0.0)
+set(BRUME_VERSION "1.0.0" CACHE STRING "Version (set by CI from the build number)")
+project(Brume VERSION ${BRUME_VERSION})
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -46,7 +47,13 @@ juce_add_plugin(Brume
 
 target_sources(Brume PRIVATE
     Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp)
+    Source/PluginEditor.cpp
+    Source/Updater.cpp)
+
+# In-app updates (macOS standalone): read-only GitHub token passed by CI from the repo secret, never committed.
+if(APPLE AND DEFINED ENV{BRUME_UPDATE_TOKEN} AND NOT "$ENV{BRUME_UPDATE_TOKEN}" STREQUAL "")
+    target_compile_definitions(Brume PRIVATE BRUME_UPDATE_TOKEN="$ENV{BRUME_UPDATE_TOKEN}")
+endif()
 
 target_compile_definitions(Brume PUBLIC
     JUCE_WEB_BROWSER=0
@@ -67,7 +74,7 @@ target_link_libraries(Brume
 option(BRUME_BUILD_TESTS "Build the offline level test" OFF)
 if(BRUME_BUILD_TESTS)
     juce_add_console_app(BrumeTest PRODUCT_NAME "BrumeTest")
-    target_sources(BrumeTest PRIVATE Tests/LevelTest.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
+    target_sources(BrumeTest PRIVATE Tests/LevelTest.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Updater.cpp)
     target_compile_definitions(BrumeTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(BrumeTest PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
 endif()
