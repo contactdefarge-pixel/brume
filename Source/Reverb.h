@@ -5,90 +5,95 @@
 #include <vector>
 #include <cmath>
 
-// Lush stereo algorithmic reverb: pre-delay -> input diffusion -> 8-line modulated feedback delay network.
-// Every parameter glides smoothly (no rebuild), so turning Length or Character never cuts the tail.
+// Lush stereo algorithmic reverb:
+//   pre-delay -> early reflections + input diffusion -> 16-line modulated feedback delay network.
+// Every parameter glides smoothly (nothing is rebuilt), so turning Length or Character never cuts the sound.
 namespace brume
 {
 class FdnReverb
 {
 public:
+    static constexpr int N = 16;
+
     void prepare (double sampleRate)
     {
         fs = sampleRate;
-        const int maxDelay = (int) (fs * 0.45) + 8;   // longest line at maximum size, plus modulation
-        for (auto& l : lines) { l.buf.assign ((size_t) maxDelay, 0.0f); l.pos = 0; l.lp = 0.0f; }
+        const int maxDelay = (int) (fs * 0.30) + 8;   // longest line at maximum size, plus modulation
+        for (auto& l : lines) { l.buf.assign ((size_t) maxDelay, 0.0f); l.pos = 0; l.lp = 0.0f; l.hp = 0.0f; }
         for (auto& ch : diffusers)
-            for (size_t k = 0; k < ch.size(); ++k)
-                ch[k].buf.assign ((size_t) (fs * 0.06) + 4, 0.0f), ch[k].pos = 0;
-        for (auto& p : preDelay) { p.assign ((size_t) (fs * 0.2) + 4, 0.0f); }
+            for (auto& d : ch) { d.buf.assign ((size_t) (fs * 0.05) + 4, 0.0f); d.pos = 0; }
+        for (auto& p : preDelay) p.assign ((size_t) (fs * 0.25) + 4, 0.0f);
         prePos = 0;
-        for (size_t i = 0; i < lines.size(); ++i)
+        for (int i = 0; i < N; ++i)
         {
-            lfoPhase[i] = (double) i / (double) lines.size();
-            curDelay[i] = targetDelay (i, 1.0);
+            lfoPhase[(size_t) i] = (double) i / (double) N;
+            curDelay[(size_t) i] = targetDelay (i, 1.0);
         }
-        curPre = 0.01 * fs;
         curGain.fill (0.0f);
         setParameters (3.0f, 0.5f, 0.8f, true);
     }
 
-    void reset()
-    {
-        for (auto& l : lines) { std::fill (l.buf.begin(), l.buf.end(), 0.0f); l.lp = 0.0f; }
-        for (auto& ch : diffusers) for (auto& d : ch) std::fill (d.buf.begin(), d.buf.end(), 0.0f);
-        for (auto& p : preDelay) std::fill (p.begin(), p.end(), 0.0f);
-    }
-
     // seconds = T60 of the tail, character 0..1 = room size (small room -> big hall),
-    // brightness 0..1 = high-frequency decay in the tail
+    // brightness 0..1 = how long the highs ring in the tail
     void setParameters (float seconds, float character, float brightness, bool snap = false)
     {
-        t60 = std::max (0.1f, seconds);
-        size = 0.45 + 1.0 * character;                       // delay-line scale
-        preTarget = (0.003 + 0.055 * character) * fs;         // pre-delay
-        diffusion = 0.62f + 0.12f * character;
-        const double cutoff = 2500.0 * std::pow (8.0, brightness);   // 2.5 kHz .. 20 kHz
+        t60 = std::max (0.15f, seconds);
+        size = 0.5 + 0.9 * character;
+        preTarget = (0.004 + 0.050 * character) * fs;
+        erSpread = 0.35 + 0.65 * character;
+        erLevel = 0.55f - 0.25f * character;               // small rooms: stronger early reflections
+        diffusion = 0.60f + 0.12f * character;
+        const double cutoff = 3000.0 * std::pow (6.0, brightness);   // 3 kHz .. 18 kHz
         dampCoef = (float) std::exp (-juce::MathConstants<double>::twoPi * std::min (cutoff, fs * 0.45) / fs);
         if (snap)
         {
             curPre = preTarget;
-            for (size_t i = 0; i < lines.size(); ++i) curDelay[i] = targetDelay (i, size);
+            curSpread = erSpread;
+            for (int i = 0; i < N; ++i) curDelay[(size_t) i] = targetDelay (i, size);
         }
     }
 
     // stereo in -> stereo out (100 % wet), in place
     void process (float* left, float* right, int n)
     {
-        // per-block: gains from the current (gliding) delay lengths
-        std::array<float, 8> gTarget {};
-        for (size_t i = 0; i < lines.size(); ++i)
-            gTarget[i] = (float) std::pow (10.0, -3.0 * curDelay[i] / (t60 * fs));
+        std::array<float, N> gTarget {};
+        for (int i = 0; i < N; ++i)
+            gTarget[(size_t) i] = (float) std::pow (10.0, -3.0 * curDelay[(size_t) i] / (t60 * fs));
 
-        const double glide = 1.0 - std::exp (-1.0 / (0.35 * fs));   // delay lengths glide over ~0.35 s
+        const double glide = 1.0 - std::exp (-1.0 / (0.35 * fs));   // sizes glide over ~0.35 s
         const float gGlide = 1.0f - (float) std::exp (-1.0 / (0.05 * fs));
-        // loudness compensation: a longer tail builds up more energy
-        const float compTarget = (float) (std::pow (2.0 / t60, compExp) * std::pow (10.0, -(1.45 - size) * 4.0 / 20.0));
+        // loudness compensation applied on the input (energy already in the tail is never boosted)
+        const float compTarget = (float) (std::pow (2.0 / t60, 0.23) * std::pow (10.0, (size - 0.95) / 0.9 * 6.0 / 20.0));
         const double lfoInc = 1.0 / fs;
+        const float norm = 0.25f;   // 1/sqrt(16)
+        const float hpCoef = (float) std::exp (-juce::MathConstants<double>::twoPi * 60.0 / fs);   // keep the tail out of the sub
 
         for (int s = 0; s < n; ++s)
         {
             curPre += (preTarget - curPre) * glide;
-
+            curSpread += (erSpread - curSpread) * glide;
             comp += (compTarget - comp) * gGlide;
-            // loudness compensation on the input, so energy already in the tail is never boosted
-            float in[2] = { left[s] * comp, right[s] * comp };
-            float x[2];
+
+            float x[2], er[2] = { 0.0f, 0.0f };
+            const float in[2] = { left[s] * comp, right[s] * comp };
             for (int c = 0; c < 2; ++c)
             {
-                // pre-delay (fractional)
                 auto& pd = preDelay[(size_t) c];
                 pd[(size_t) prePos] = in[c];
                 x[c] = readFrac (pd, prePos, curPre);
+
+                // early reflections: 6 taps after the pre-delay, mirrored between channels
+                for (int t = 0; t < 6; ++t)
+                {
+                    const double d = curPre + erMs[(size_t) t][(size_t) c] * 0.001 * fs * curSpread;
+                    er[c] += readFrac (pd, prePos, d) * erGain[(size_t) t];
+                }
+
                 // input diffusion: 4 allpasses
                 for (size_t k = 0; k < 4; ++k)
                 {
                     auto& ap = diffusers[(size_t) c][k];
-                    const int len = std::max (1, (int) (apBase[k] * (c == 0 ? 1.0 : 1.071) * size * fs));
+                    const int len = std::max (1, (int) (apBase[k] * (c == 0 ? 1.0 : 1.083) * size * fs));
                     int rp = ap.pos - len; if (rp < 0) rp += (int) ap.buf.size();
                     const float delayed = ap.buf[(size_t) rp];
                     const float v = x[c] + diffusion * delayed;
@@ -99,50 +104,57 @@ public:
             }
             if (++prePos >= (int) preDelay[0].size()) prePos = 0;
 
-            // read the 8 lines (modulated, interpolated), damp, scale
-            std::array<float, 8> y {};
-            for (size_t i = 0; i < lines.size(); ++i)
+            // read the lines (modulated + interpolated), damp, scale
+            std::array<float, N> y {};
+            for (int i = 0; i < N; ++i)
             {
-                curDelay[i] += (targetDelay (i, size) - curDelay[i]) * glide;
-                curGain[i] += (gTarget[i] - curGain[i]) * gGlide;
-                lfoPhase[i] += lfoInc * lfoRate[i];
-                if (lfoPhase[i] >= 1.0) lfoPhase[i] -= 1.0;
-                const double mod = std::sin (juce::MathConstants<double>::twoPi * lfoPhase[i]) * 0.0009 * fs;  // +-0.9 ms
-                auto& l = lines[i];
-                float v = readFrac (l.buf, l.pos, curDelay[i] + mod);
-                l.lp = v + (l.lp - v) * dampCoef;                 // one-pole low-pass in the loop
-                y[i] = l.lp * curGain[i];
+                const auto ii = (size_t) i;
+                curDelay[ii] += (targetDelay (i, size) - curDelay[ii]) * glide;
+                curGain[ii] += (gTarget[ii] - curGain[ii]) * gGlide;
+                lfoPhase[ii] += lfoInc * (0.07 + 0.031 * i);
+                if (lfoPhase[ii] >= 1.0) lfoPhase[ii] -= 1.0;
+                const double mod = std::sin (juce::MathConstants<double>::twoPi * lfoPhase[ii]) * 0.0007 * fs;   // +-0.7 ms
+                auto& l = lines[ii];
+                const float v = readFrac (l.buf, l.pos, curDelay[ii] + mod);
+                l.lp = v + (l.lp - v) * dampCoef;              // highs decay faster
+                l.hp = l.lp + (l.hp - l.lp) * hpCoef;          // very lows don't build up
+                y[ii] = (l.lp - l.hp) * curGain[ii];
             }
 
-            // Hadamard feedback matrix (energy preserving)
-            std::array<float, 8> h = y;
-            for (int len = 1; len < 8; len <<= 1)
-                for (int i = 0; i < 8; i += len << 1)
+            // 16x16 Hadamard feedback (energy preserving)
+            std::array<float, N> h = y;
+            for (int len = 1; len < N; len <<= 1)
+                for (int i = 0; i < N; i += len << 1)
                     for (int j = i; j < i + len; ++j)
                     {
                         const float a = h[(size_t) j], b = h[(size_t) (j + len)];
                         h[(size_t) j] = a + b; h[(size_t) (j + len)] = a - b;
                     }
-            const float norm = 0.35355339f;   // 1/sqrt(8)
 
-            for (size_t i = 0; i < lines.size(); ++i)
+            for (int i = 0; i < N; ++i)
             {
-                auto& l = lines[i];
-                const float inject = (i & 1) ? x[1] : x[0];
-                l.buf[(size_t) l.pos] = h[i] * norm + inject;
+                auto& l = lines[(size_t) i];
+                l.buf[(size_t) l.pos] = h[(size_t) i] * norm + ((i & 1) ? x[1] : x[0]) * 0.7f;
                 if (++l.pos >= (int) l.buf.size()) l.pos = 0;
             }
 
-            left[s]  = (y[0] - y[2] + y[4] - y[6] + y[1] * 0.5f - y[7] * 0.5f) * 0.5f;
-            right[s] = (y[1] - y[3] + y[5] - y[7] + y[0] * 0.5f - y[6] * 0.5f) * 0.5f;
+            // decorrelated stereo taps from the lines
+            float outL = 0.0f, outR = 0.0f;
+            for (int i = 0; i < N; ++i)
+            {
+                outL += y[(size_t) i] * tapL[(size_t) i];
+                outR += y[(size_t) i] * tapR[(size_t) i];
+            }
+            left[s]  = outL * 0.35f + er[0] * erLevel;
+            right[s] = outR * 0.35f + er[1] * erLevel;
         }
     }
 
 private:
-    struct Line { std::vector<float> buf; int pos = 0; float lp = 0.0f; };
+    struct Line { std::vector<float> buf; int pos = 0; float lp = 0.0f, hp = 0.0f; };
     struct Allpass { std::vector<float> buf; int pos = 0; };
 
-    double targetDelay (size_t i, double sz) const { return baseMs[i] * 0.001 * sz * fs; }
+    double targetDelay (int i, double sz) const { return baseMs[(size_t) i] * 0.001 * sz * fs; }
 
     static float readFrac (const std::vector<float>& buf, int writePos, double delay)
     {
@@ -157,21 +169,23 @@ private:
     }
 
     double fs = 44100.0;
-    std::array<Line, 8> lines;
+    std::array<Line, N> lines;
     std::array<std::array<Allpass, 4>, 2> diffusers;
     std::array<std::vector<float>, 2> preDelay;
     int prePos = 0;
-    double curPre = 0.0, preTarget = 0.0;
-    std::array<double, 8> curDelay {}, lfoPhase {};
-    std::array<float, 8> curGain {};
+    double curPre = 0.0, preTarget = 0.0, curSpread = 1.0, erSpread = 1.0;
+    std::array<double, N> curDelay {}, lfoPhase {};
+    std::array<float, N> curGain {};
     double size = 1.0;
-    float t60 = 3.0f, diffusion = 0.7f, dampCoef = 0.3f, comp = 1.0f;
-public:
-    float compExp = 0.5f;
-private:
+    float t60 = 3.0f, diffusion = 0.7f, dampCoef = 0.3f, comp = 1.0f, erLevel = 0.4f;
 
-    static constexpr double baseMs[8]  = { 31.3, 37.9, 43.2, 51.7, 59.1, 66.9, 77.3, 87.1 };
-    static constexpr double apBase[4]  = { 0.0047, 0.0036, 0.0127, 0.0093 };
-    static constexpr double lfoRate[8] = { 0.11, 0.13, 0.17, 0.19, 0.23, 0.29, 0.31, 0.37 };
+    // mutually prime-ish line lengths (ms at size 1), 23..143 ms
+    static constexpr double baseMs[N] = { 23.1, 26.9, 31.7, 35.3, 41.9, 46.1, 52.3, 57.7,
+                                          64.1, 71.3, 78.7, 86.9, 96.1, 107.3, 119.9, 133.1 };
+    static constexpr double apBase[4] = { 0.0047, 0.0036, 0.0127, 0.0093 };
+    static constexpr double erMs[6][2] = { { 7.1, 9.3 }, { 13.7, 11.9 }, { 19.3, 23.1 }, { 29.9, 27.1 }, { 37.3, 41.7 }, { 53.9, 49.1 } };
+    static constexpr float erGain[6] = { 0.62f, -0.51f, 0.44f, -0.37f, 0.30f, -0.24f };
+    static constexpr float tapL[N] = { 1, -1, 1, 1, -1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, -1 };
+    static constexpr float tapR[N] = { 1, 1, -1, 1, 1, -1, -1, 1, -1, 1, 1, -1, -1, -1, 1, 1 };
 };
 }

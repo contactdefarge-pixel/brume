@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <atomic>
+#include "Reverb.h"
 
 namespace brume
 {
@@ -107,7 +108,6 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void timerCallback() override;
-    void rebuildImpulseResponse();
     void updateFilters (bool force);
     void handleMidi (const juce::MidiMessage&, juce::int64 samplePos);
     void processChunk (juce::AudioBuffer<float>&, int syncSrc, double bpm, double beatAtStart);
@@ -124,13 +124,8 @@ private:
     double fs = 44100.0;
     int maxBlock = 512;
 
-    // reverb: one convolution for the input, one for the noise wash (same IR)
-    juce::dsp::Convolution reverbConv { juce::dsp::Convolution::NonUniform { 512 } };
-    juce::dsp::Convolution noiseConv  { juce::dsp::Convolution::NonUniform { 512 } };
-    float irLength = -1.0f, irCharacter = -1.0f;
-    float pendingLength = -1.0f, pendingCharacter = -1.0f;
-    int pendingTicks = 0;
-    juce::Random irRandom;
+    // reverbs: algorithmic, every parameter glides (no cut when turning Length / Character)
+    brume::FdnReverb fdn, fdnNoise;
     bool prepared = false;
 
     using Filter = juce::dsp::IIR::Filter<float>;

@@ -503,6 +503,11 @@ void BrumeEditor::paint (juce::Graphics& g)
     drawScrew (g, { pb.getX() + 14, pb.getBottom() - 14 }, 7.0f);
     drawScrew (g, { pb.getRight() - 14, pb.getBottom() - 14 }, 7.0f);
 
+    // version plate
+    g.setColour (silk.withAlpha (0.55f));
+    g.setFont (silkFont (9.5f, 0.2f));
+    g.drawText ("BRUME AUDIO  -  V" + Updater::currentVersion(), juce::Rectangle<float> (pb.getX(), pb.getBottom() - 24.0f, pb.getWidth(), 14.0f), juce::Justification::centred);
+
     // knob labels
     g.setColour (silk);
     g.setFont (silkFont (13.0f));

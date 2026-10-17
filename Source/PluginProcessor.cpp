@@ -3,70 +3,13 @@
 
 namespace
 {
-    // Levels calibrated against the web prototype (same loudness for the same knob positions).
-    constexpr float kIrScale     = 0.517f;  // reverb IR energy (unit-energy IR is scaled to this)
+    // Levels (calibrated with Tests/LevelTest.cpp)
+    constexpr float kReverbGain  = 1.0f;    // algorithmic reverb output
     constexpr float kWetGain     = 1.4f;
     constexpr float kMasterGain  = 0.9f;
     constexpr float kNoiseMax    = 0.42f;
     constexpr float kNoiseDirect = 0.85f;
     constexpr float kNoiseWash   = 0.6f;
-
-    // Builds a stereo reverb impulse response.
-    // character = room size: small room (short, dense early reflections) -> large hall
-    // (pre-delay, spread-out reflections). The diffuse tail has a T60 of `seconds`.
-    void makeImpulseResponse (juce::AudioBuffer<float>& ir, double fs, float seconds, float character, juce::Random& rnd)
-    {
-        const int len = (int) (fs * std::min (seconds * 1.2 + 0.2, 15.0));
-        ir.setSize (2, len);
-        ir.clear();
-
-        const double pre = 0.002 + 0.045 * character;
-        const double spread = 0.008 + 0.11 * character;
-        const double tailStart = pre + spread * 0.45;
-        const double tailFade = spread * 0.6 + 0.01;
-        const double startHz = 8500.0, endHz = 1300.0, k = 6.9 / seconds;
-
-        for (int c = 0; c < 2; ++c)
-        {
-            auto* d = ir.getWritePointer (c);
-
-            const int nER = 8 + (int) std::round (10.0 * (1.0 - character));
-            for (int e = 0; e < nER; ++e)
-            {
-                const double t = pre + spread * std::pow ((double) rnd.nextFloat(), 0.8);
-                const int i = (int) (t * fs);
-                const double amp = (0.9 - 0.6 * (t - pre) / spread) * (rnd.nextBool() ? -1.0 : 1.0) * (0.6 + 0.4 * rnd.nextFloat());
-                for (int j = 0; j < 24 && i + j < len; ++j)
-                    d[i + j] += (float) (amp * std::exp (-j / (3.0 + character * 5.0)));
-            }
-
-            const int i0 = (int) (tailStart * fs);
-            const int nFade = std::max (1, (int) (tailFade * fs));
-            double lp = 0.0, lp2 = 0.0;
-            for (int i = i0; i < len; ++i)
-            {
-                const double t = (i - i0) / fs;
-                const double fc = endHz + (startHz - endHz) * std::exp (-2.2 * t / seconds);
-                const double a = 1.0 - std::exp (-juce::MathConstants<double>::twoPi * fc / fs);
-                lp += a * ((rnd.nextDouble() * 2.0 - 1.0) - lp);
-                lp2 += a * (lp - lp2);
-                double v = lp2 * std::exp (-k * t) * 0.9;
-                if (i - i0 < nFade) v *= (double) (i - i0) / nFade;
-                d[i] += (float) v;
-            }
-        }
-
-        // normalise to a fixed energy so every length/character has the same loudness
-        double energy = 0.0;
-        for (int c = 0; c < 2; ++c)
-        {
-            auto* d = ir.getReadPointer (c);
-            for (int i = 0; i < len; ++i) energy += (double) d[i] * d[i];
-        }
-        energy /= 2.0;
-        if (energy > 0.0)
-            ir.applyGain ((float) (kIrScale / std::sqrt (energy)));
-    }
 
     float softClip (float x)
     {
@@ -189,8 +132,11 @@ void BrumeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     maxBlock = std::max (1, samplesPerBlock);
 
     juce::dsp::ProcessSpec spec { fs, (juce::uint32) maxBlock, 2 };
-    reverbConv.prepare (spec);
-    noiseConv.prepare (spec);
+    {
+        const float l = brume::lengthSeconds (pLength->load()), c = pCharacter->load(), b = 0.55f + 0.45f * pAir->load();
+        fdn.prepare (fs);      fdn.setParameters (l, c, b, true);
+        fdnNoise.prepare (fs); fdnNoise.setParameters (l, c, b, true);
+    }
 
     juce::dsp::ProcessSpec mono { fs, (juce::uint32) maxBlock, 1 };
     auto setup = [&] (Filter* f, juce::dsp::IIR::Coefficients<float>::Ptr coefs)
@@ -218,37 +164,9 @@ void BrumeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     sendGate = noiseGate = pOn->load() > 0.5f ? 1.0f : 0.0f;
 
     prepared = true;
-    rebuildImpulseResponse();
 }
 
-void BrumeProcessor::rebuildImpulseResponse()
-{
-    if (! prepared) return;
-    irLength = pLength->load();
-    irCharacter = pCharacter->load();
-
-    juce::AudioBuffer<float> ir;
-    makeImpulseResponse (ir, fs, brume::lengthSeconds (irLength), irCharacter, irRandom);
-    juce::AudioBuffer<float> irCopy (ir);
-
-    using C = juce::dsp::Convolution;
-    reverbConv.loadImpulseResponse (std::move (ir), fs, C::Stereo::yes, C::Trim::no, C::Normalise::no);
-    noiseConv.loadImpulseResponse (std::move (irCopy), fs, C::Stereo::yes, C::Trim::no, C::Normalise::no);
-}
-
-void BrumeProcessor::timerCallback()
-{
-    // rebuild the IR once Length / Character have stopped moving for ~150 ms
-    const float l = pLength->load(), c = pCharacter->load();
-    if (std::abs (l - irLength) < 0.002f && std::abs (c - irCharacter) < 0.002f)
-        return;
-    if (std::abs (l - pendingLength) > 0.0005f || std::abs (c - pendingCharacter) > 0.0005f)
-    {
-        pendingLength = l; pendingCharacter = c; pendingTicks = 0; return;
-    }
-    if (++pendingTicks >= 3)
-        rebuildImpulseResponse();
-}
+void BrumeProcessor::timerCallback() {}
 
 void BrumeProcessor::updateFilters (bool force)
 {
@@ -390,15 +308,13 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
     for (int c = 0; c < 2; ++c)
         washBuf.copyFrom (c, 0, noiseBuf, c, 0, n);
 
-    // 2) reverbs
+    // 2) reverbs (algorithmic: parameters glide, nothing is rebuilt, so no cut when turning knobs)
     {
-        juce::dsp::AudioBlock<float> sb (sendBuf);
-        auto sub = sb.getSubBlock (0, (size_t) n);
-        reverbConv.process (juce::dsp::ProcessContextReplacing<float> (sub));
-
-        juce::dsp::AudioBlock<float> wb (washBuf);
-        auto wsub = wb.getSubBlock (0, (size_t) n);
-        noiseConv.process (juce::dsp::ProcessContextReplacing<float> (wsub));
+        const float l = brume::lengthSeconds (pLength->load()), c = pCharacter->load(), b = 0.55f + 0.45f * pAir->load();
+        fdn.setParameters (l, c, b);
+        fdnNoise.setParameters (l, c, b);
+        fdn.process (sL, sR, n);
+        fdnNoise.process (washBuf.getWritePointer (0), washBuf.getWritePointer (1), n);
     }
 
     // 3) noise (direct + wash) with tremolo, summed into the wet bus, then Air and low cut
@@ -423,8 +339,8 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
         }
         const float trem = 1.0f - tremDepth * 0.5f + tremDepth * 0.5f * (float) std::sin (juce::MathConstants<double>::twoPi * tremPhase);
 
-        float l = sL[i] + (nL[i] * kNoiseDirect + wL[i] * kNoiseWash) * trem;
-        float r = sR[i] + (nR[i] * kNoiseDirect + wR[i] * kNoiseWash) * trem;
+        float l = sL[i] * kReverbGain + (nL[i] * kNoiseDirect + wL[i] * kNoiseWash) * trem;
+        float r = sR[i] * kReverbGain + (nR[i] * kNoiseDirect + wR[i] * kNoiseWash) * trem;
         l = lowCut[0].processSample (airShelf[0].processSample (l));
         r = lowCut[1].processSample (airShelf[1].processSample (r));
         sL[i] = l * kWetGain;
