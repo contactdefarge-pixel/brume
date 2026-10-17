@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 set(BRUME_VERSION "1.0.0" CACHE STRING "Version (set by CI from the build number)")
-project(Brume VERSION ${BRUME_VERSION})
+project(Brume VERSION ${BRUME_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -51,7 +51,24 @@ juce_add_plugin(Brume
 target_sources(Brume PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
-    Source/Updater.cpp)
+    Source/Updater.cpp
+    Source/F1Reader.cpp)
+
+# Direct USB (HID) reading of the Traktor Kontrol F1, via hidapi (BSD licence, ThirdParty/hidapi)
+option(BRUME_F1_LINUX "Build the F1 HID reader on Linux too (needs libudev, for testing)" OFF)
+function(brume_add_hidapi target)
+    target_include_directories(${target} PRIVATE ThirdParty/hidapi/hidapi ThirdParty/hidapi/mac)
+    if(APPLE)
+        target_sources(${target} PRIVATE ThirdParty/hidapi/mac/hid.c)
+        target_link_libraries(${target} PRIVATE "-framework IOKit" "-framework CoreFoundation")
+        target_compile_definitions(${target} PRIVATE BRUME_HAS_HIDAPI=1)
+    elseif(BRUME_F1_LINUX)
+        target_sources(${target} PRIVATE ThirdParty/hidapi/linux/hid.c)
+        target_link_libraries(${target} PRIVATE udev)
+        target_compile_definitions(${target} PRIVATE BRUME_HAS_HIDAPI=1)
+    endif()
+endfunction()
+brume_add_hidapi(Brume)
 
 # In-app updates (macOS standalone): read-only GitHub token passed by CI from the repo secret, never committed.
 if(APPLE AND DEFINED ENV{BRUME_UPDATE_TOKEN} AND NOT "$ENV{BRUME_UPDATE_TOKEN}" STREQUAL "")
@@ -77,7 +94,8 @@ target_link_libraries(Brume
 option(BRUME_BUILD_TESTS "Build the offline level test" OFF)
 if(BRUME_BUILD_TESTS)
     juce_add_console_app(BrumeTest PRODUCT_NAME "BrumeTest")
-    target_sources(BrumeTest PRIVATE Tests/LevelTest.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Updater.cpp)
+    target_sources(BrumeTest PRIVATE Tests/LevelTest.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Updater.cpp Source/F1Reader.cpp)
+    brume_add_hidapi(BrumeTest)
     target_compile_definitions(BrumeTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(BrumeTest PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
 endif()

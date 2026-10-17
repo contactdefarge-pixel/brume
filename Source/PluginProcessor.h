@@ -3,7 +3,9 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <atomic>
+#include "F1Reader.h"
 #include "Reverb.h"
 
 namespace brume
@@ -98,6 +100,9 @@ public:
     double getRecordedSeconds() const { return (double) recSamples.load() / std::max (1.0, fs); }
     juce::File getLastRecording() const { return lastRecording; }
 
+    // ---- Traktor Kontrol F1 read directly over USB (standalone app) ----
+    F1Reader::Status getF1Status() const { return f1Reader.getStatus(); }
+
     // ---- tempo sync ----
     // 0 = free (Tempo knob in Hz), 1 = MIDI clock (e.g. Traktor), 2 = host tempo (e.g. Ableton)
     int   getSyncSource() const { return syncSource.load(); }
@@ -150,6 +155,18 @@ private:
     std::array<int, numMidiTargets> midiLast {};
     std::atomic<int> learnTarget { -1 }, learnedTarget { -1 };
     std::atomic<int> midiActivity { 0 }, lastMidiCode { -1 }, lastMidiValue { 0 };
+
+    // F1 direct: the reader thread queues MIDI-like messages that processBlock picks up
+    juce::MidiMessageCollector f1Collector;
+    std::atomic<bool> f1Ready { false };
+    juce::MidiBuffer f1Midi;
+    F1Reader f1Reader { [this] (const juce::MidiMessage& m)
+    {
+        if (! f1Ready.load()) return;
+        auto msg = m;
+        msg.setTimeStamp (juce::Time::getMillisecondCounterHiRes() * 0.001);
+        f1Collector.addMessageToQueue (msg);
+    } };
 
     // recorder
     juce::TimeSliceThread recThread { "Brume recorder" };

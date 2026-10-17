@@ -61,6 +61,29 @@ int main()
     std::this_thread::sleep_for (std::chrono::milliseconds (300));
 
     double cpu = 0;
+    if (auto* irPath = std::getenv ("BRUME_IR"))
+    {
+        // impulse response of the wet path (length 0.62, character 0.5, air 0.3), written as a WAV
+        setParam (p, brume::id::tremolo, 0); setParam (p, brume::id::noise, 0); setParam (p, brume::id::on, 1); setParam (p, brume::id::wet, 1);
+        if (auto* c = std::getenv ("BRUME_CHAR")) setParam (p, brume::id::character, (float) std::atof (c));
+        render (p, fs, 2.0f, -300, 0.1f);
+        const int len = (int) (fs * 4);
+        juce::AudioBuffer<float> out (2, len); out.clear();
+        juce::MidiBuffer mb;
+        for (int pos = 0; pos < len; pos += 512)
+        {
+            const int n = std::min (512, len - pos);
+            juce::AudioBuffer<float> blk (2, n); blk.clear();
+            if (pos == 0) { blk.setSample (0, 0, 1.0f); blk.setSample (1, 0, 1.0f); }
+            p.processBlock (blk, mb);
+            for (int c = 0; c < 2; ++c) out.copyFrom (c, pos, blk, c, 0, n);
+        }
+        juce::File f (irPath); f.deleteFile();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (f.createOutputStream().release(), fs, 2, 24, {}, 0));
+        w->writeFromAudioSampleBuffer (out, 0, len);
+        return 0;
+    }
     if (std::getenv ("BRUME_GRID"))
     {
         setParam (p, brume::id::tremolo, 0); setParam (p, brume::id::noise, 0); setParam (p, brume::id::on, 1); setParam (p, brume::id::wet, 1);
@@ -175,6 +198,24 @@ int main()
         }
         std::printf ("sweep char/length    : wet level range %.1f .. %.1f dB (no dropout if the range is small)\n", minDb, maxDb);
         setParam (p, brume::id::wet, 0);
+    }
+
+    // F1 HID report parsing -> MIDI-like messages
+    {
+        juce::Array<juce::MidiMessage> got;
+        F1Reader r ([&] (const juce::MidiMessage& m) { got.add (m); });
+        unsigned char rep[22] = { 0x01 };
+        r.testParse (rep, 22);                       // first report: baseline
+        rep[1] = 0x80;                               // pad 1 pressed
+        rep[6] = 0xfe; rep[7] = 0x07;                // knob 1 = 2046
+        rep[4] = 0x08;                               // SYNC (bit 27)
+        r.testParse (rep, 22);
+        juce::String s;
+        for (auto& m : got) s << (m.isNoteOn() ? "noteOn " : m.isNoteOff() ? "noteOff " : "cc ") << (m.isController() ? m.getControllerNumber() : m.getNoteNumber())
+                              << "=" << (m.isController() ? m.getControllerValue() : m.getVelocity()) << " ch" << m.getChannel() << "  ";
+        std::printf ("F1 parse             : %s\n", s.toRawUTF8());
+        std::printf ("F1 names             : %s / %s / %s\n", BrumeProcessor::describeMapping ((2 << 16) | (16 << 8) | 1).toRawUTF8(),
+                     BrumeProcessor::describeMapping ((1 << 16) | (16 << 8) | 1).toRawUTF8(), BrumeProcessor::describeMapping ((2 << 16) | (16 << 8) | 21).toRawUTF8());
     }
 
     // recorder

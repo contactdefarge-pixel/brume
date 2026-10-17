@@ -100,6 +100,7 @@ private:
     juce::TextButton recButton { "REC" };
     bool wasRecording = false;
     int shownMidiActivity = 0;
+    int shownF1 = -1;
     LearnOverlay overlay { *this };
     UpdateBanner updateBanner;
     bool learnMode = false;

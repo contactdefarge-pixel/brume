@@ -279,6 +279,21 @@ void BrumeEditor::timerCallback()
             if (txt != readoutValue) { readoutValue = txt; repaint (0, 650, kW, 70); }
         }
 
+    // F1 read directly over USB: tell when it connects or is locked by another app
+    if (const int f1 = (int) proc.getF1Status(); f1 != shownF1)
+    {
+        const bool first = shownF1 < 0;
+        shownF1 = f1;
+        if (f1 == F1Reader::connected || (f1 == F1Reader::busy && ! first) || f1 == F1Reader::busy)
+        {
+            readoutName = "F1";
+            readoutValue = f1 == F1Reader::connected ? "read directly over USB - MIDI learn ready"
+                                                     : "found but locked by another app (Traktor?)";
+            lastParam.clear();
+            repaint (0, 650, kW, 70);
+        }
+    }
+
     // MIDI monitor: show every control message that reaches Brume
     if (const int act = proc.getMidiActivity(); act != shownMidiActivity)
     {

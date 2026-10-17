@@ -4,7 +4,7 @@
 namespace
 {
     // Levels (calibrated with Tests/LevelTest.cpp)
-    constexpr float kReverbGain  = 1.0f;    // algorithmic reverb output
+    constexpr float kReverbGain  = 1.5f;    // algorithmic reverb output
     constexpr float kWetGain     = 1.4f;
     constexpr float kMasterGain  = 0.9f;
     constexpr float kNoiseMax    = 0.42f;
@@ -43,6 +43,8 @@ BrumeProcessor::BrumeProcessor()
 
     for (auto& m : midiMap) m.store (-1);
     startTimerHz (20);
+    if (juce::JUCEApplicationBase::isStandaloneApp())
+        f1Reader.start();
 }
 
 BrumeProcessor::~BrumeProcessor() { stopTimer(); stopRecording(); }
@@ -130,6 +132,9 @@ void BrumeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     fs = sampleRate;
     maxBlock = std::max (1, samplesPerBlock);
+    f1Collector.reset (fs);
+    f1Midi.ensureSize (4096);
+    f1Ready = true;
 
     juce::dsp::ProcessSpec spec { fs, (juce::uint32) maxBlock, 2 };
     {
@@ -202,6 +207,13 @@ void BrumeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     for (const auto meta : midi)
         handleMidi (meta.getMessage(), blockStart + meta.samplePosition);
     midi.clear();
+    if (f1Ready.load())
+    {
+        f1Midi.clear();
+        f1Collector.removeNextBlockOfMessages (f1Midi, std::max (1, buffer.getNumSamples()));
+        for (const auto meta : f1Midi)
+            handleMidi (meta.getMessage(), blockStart + meta.samplePosition);
+    }
     sampleCounter += buffer.getNumSamples();
 
     // tempo source: MIDI clock first (Traktor), then the host's tempo (Ableton), else free-running
@@ -410,6 +422,7 @@ juce::String BrumeProcessor::describeMapping (int code)
 {
     if (code < 0) return {};
     const int type = (code >> 16) & 0xff, ch = (code >> 8) & 0xff, num = code & 0xff;
+    if (ch == F1Reader::channel) return F1Reader::controlName (type, num);
     return juce::String (type == 1 ? "CC " : "Note ") + juce::String (num) + " (ch " + juce::String (ch) + ")";
 }
 

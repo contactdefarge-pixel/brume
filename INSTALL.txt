@@ -32,6 +32,10 @@ UTILISATION
 - MIDI LEARN : cliquer sur le bouton MIDI en bas à droite, cliquer sur un contrôle de la pédale,
   puis tourner ou appuyer sur le contrôle voulu de votre contrôleur. Clic droit = supprimer le lien.
   Dans la version autonome, activer d'abord le contrôleur dans Options > Audio/MIDI Settings.
+- TRAKTOR KONTROL F1 : l'appli autonome lit la F1 directement en USB, même quand Traktor l'utilise.
+  Laisser la F1 en mode Traktor (pas en MIDI). En bas de Brume : "F1 read directly over USB" = OK.
+  Ensuite MIDI learn comme d'habitude (les contrôles s'appellent F1 PAD 1, F1 KNOB 2, etc.).
+  Attention : un contrôle de la F1 agit à la fois dans Traktor et dans Brume.
 - Double-clic sur un bouton : valeur par défaut. Maj + glisser : réglage fin.
 
 SYNCHRO AVEC TRAKTOR (trémolo calé sur le tempo des morceaux)
