@@ -219,47 +219,58 @@ bool Updater::downloadAndInstall()
     auto newApp = tmp.getChildFile ("Brume").getChildFile ("Brume.app");
     if (! newApp.isDirectory()) return false;
 
-    // 4) a small script swaps the app and the plugins once this app has quit, then relaunches it
+    // 4) install while Brume is still running (macOS may kill helper processes when the app quits):
+    //    plugins into the user folder, then swap the app bundle (a running app can be replaced on macOS)
     auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
     if (! app.getFullPathName().endsWith (".app")) return false;
     const auto q = [] (const juce::File& f) { return f.getFullPathName().quoted(); };
     auto src = tmp.getChildFile ("Brume");
-    const int pid = (int) getpid();
     juce::String script;
     script << "#!/bin/sh\n"
-           << "LOG=\"$HOME/Library/Logs/Brume-update.log\"\n"
-           << "exec >\"$LOG\" 2>&1\n"
+           << "exec 2>&1\n"
            << "set -x\n"
-           << "date\n"
-           // wait for Brume to quit (15 s max), then make sure it is gone
-           << "i=0; while kill -0 " << pid << " 2>/dev/null && [ $i -lt 50 ]; do sleep 0.3; i=$((i+1)); done\n"
-           << "kill -9 " << pid << " 2>/dev/null; sleep 0.5\n"
-           // plugins: user folder, never blocked
            << "P=\"$HOME/Library/Audio/Plug-Ins\"\n"
            << "mkdir -p \"$P/VST3\" \"$P/Components\"\n"
            << "rm -rf \"$P/VST3/Brume.vst3\"; /usr/bin/ditto " << q (src.getChildFile ("Brume.vst3")) << " \"$P/VST3/Brume.vst3\"\n"
            << "rm -rf \"$P/Components/Brume.component\"; /usr/bin/ditto " << q (src.getChildFile ("Brume.component")) << " \"$P/Components/Brume.component\"\n"
            << "/usr/bin/xattr -dr com.apple.quarantine \"$P/VST3/Brume.vst3\" \"$P/Components/Brume.component\"\n"
-           // the app: copy next to the old one, then swap; macOS may refuse to touch an app in /Applications
            << "APP=" << q (app) << "\n"
+           << "rm -rf \"$APP.new\"\n"
            << "if /usr/bin/ditto " << q (newApp) << " \"$APP.new\" && rm -rf \"$APP\" && mv \"$APP.new\" \"$APP\"; then\n"
            << "  /usr/bin/xattr -dr com.apple.quarantine \"$APP\"\n"
            << "  echo UPDATE_OK\n"
-           << "  /usr/bin/open \"$APP\"\n"
            << "else\n"
            << "  echo UPDATE_FAILED\n"
            << "  rm -rf \"$APP.new\"\n"
-           << "  [ -d \"$APP\" ] && /usr/bin/open \"$APP\"\n"
-           << "  /usr/bin/open -R " << q (newApp) << "\n"   // show the new app in the Finder as a fallback
-           << "fi\n";
+           << "fi\n"
+           << "exit 0\n";
     auto scriptFile = tmp.getChildFile ("install.sh");
     if (! scriptFile.replaceWithText (script)) return false;
 
-    juce::ChildProcess launcher;
-    if (! launcher.start (juce::StringArray { "/bin/sh", "-c", "/usr/bin/nohup /bin/sh " + scriptFile.getFullPathName().quoted() + " >/dev/null 2>&1 </dev/null &" }, 0))
+    juce::ChildProcess installer;
+    if (! installer.start (juce::StringArray { "/bin/sh", scriptFile.getFullPathName() }))
         return false;
-    launcher.waitForProcessToFinish (5000);
+    const auto output = installer.readAllProcessOutput();
+    installer.waitForProcessToFinish (120000);
 
+    auto log = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Logs/Brume-update.log");
+    log.getParentDirectory().createDirectory();
+    log.replaceWithText (juce::Time::getCurrentTime().toString (true, true) + "\n" + output.replace ("UPDATE_FAILED", "update failed"));
+
+    if (! output.contains ("UPDATE_OK"))
+    {
+        newApp.revealToUser();   // fallback: the new app is shown in the Finder, ready to drag into Applications
+        Status f;
+        f.state = Status::State::failed;
+        f.message = fr ("macOS a bloqué le remplacement : glisse la nouvelle Brume.app (ouverte dans le Finder) dans Applications.");
+        post (f);
+        return true;   // handled: do not quit
+    }
+
+    // 5) relaunch the new version, then quit this one
+    juce::ChildProcess opener;
+    opener.start (juce::StringArray { "/usr/bin/open", "-n", app.getFullPathName() });
+    opener.waitForProcessToFinish (10000);
     juce::MessageManager::callAsync ([] { juce::JUCEApplicationBase::quit(); });
     return true;
    #endif
