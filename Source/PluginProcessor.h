@@ -4,7 +4,6 @@
 #include <juce_dsp/juce_dsp.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <atomic>
-#include "Reverb.h"
 
 namespace brume
 {
@@ -108,6 +107,7 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void timerCallback() override;
+    void rebuildImpulseResponse();
     void updateFilters (bool force);
     void handleMidi (const juce::MidiMessage&, juce::int64 samplePos);
     void processChunk (juce::AudioBuffer<float>&, int syncSrc, double bpm, double beatAtStart);
@@ -124,8 +124,13 @@ private:
     double fs = 44100.0;
     int maxBlock = 512;
 
-    // reverb: algorithmic, every parameter glides (no cut when turning Length / Character)
-    brume::FdnReverb fdn;
+    // reverb: one convolution for the input, one for the noise wash (same IR)
+    juce::dsp::Convolution reverbConv { juce::dsp::Convolution::NonUniform { 512 } };
+    juce::dsp::Convolution noiseConv  { juce::dsp::Convolution::NonUniform { 512 } };
+    float irLength = -1.0f, irCharacter = -1.0f;
+    float pendingLength = -1.0f, pendingCharacter = -1.0f;
+    int pendingTicks = 0;
+    juce::Random irRandom;
     bool prepared = false;
 
     using Filter = juce::dsp::IIR::Filter<float>;
@@ -133,16 +138,7 @@ private:
     float lastPreHP = -1, lastAir = -1, lastNoiseSetup = -1;
     float lowCutSmoothed = 160.0f, lastLowCut = -1;
 
-    juce::AudioBuffer<float> sendBuf, noiseBuf;
-    std::vector<float> tremBuf;
-
-    // recorder
-    juce::TimeSliceThread recThread { "Brume recorder" };
-    std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> recWriter;
-    std::atomic<juce::AudioFormatWriter::ThreadedWriter*> activeWriter { nullptr };
-    juce::CriticalSection recLock;
-    std::atomic<juce::int64> recSamples { 0 };
-    juce::File lastRecording;
+    juce::AudioBuffer<float> sendBuf, noiseBuf, washBuf;
 
     // smoothing state
     float sendGate = 0.0f, noiseGate = 0.0f, dryGain = 1.0f, sendAmt = 0.0f, noiseAmt = 0.0f, tremDepth = 0.0f;
@@ -159,6 +155,14 @@ private:
     std::array<int, numMidiTargets> midiLast {};
     std::atomic<int> learnTarget { -1 }, learnedTarget { -1 };
     std::atomic<int> midiActivity { 0 }, lastMidiCode { -1 }, lastMidiValue { 0 };
+
+    // recorder
+    juce::TimeSliceThread recThread { "Brume recorder" };
+    std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> recWriter;
+    std::atomic<juce::AudioFormatWriter::ThreadedWriter*> activeWriter { nullptr };
+    juce::CriticalSection recLock;
+    std::atomic<juce::int64> recSamples { 0 };
+    juce::File lastRecording;
     juce::int64 sampleCounter = 0;
     std::array<juce::int64, 8> midiTaps {};
 
