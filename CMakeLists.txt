@@ -36,6 +36,7 @@ juce_add_plugin(Brume
     PLUGIN_CODE Brm1
     FORMATS ${BRUME_FORMATS}
     PRODUCT_NAME "Brume"
+    ICON_BIG Resources/icon.png
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
