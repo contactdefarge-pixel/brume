@@ -7,7 +7,7 @@ namespace
     constexpr float kReverbGain  = 1.5f;    // algorithmic reverb output
     constexpr float kWetGain     = 1.4f;
     constexpr float kMasterGain  = 0.9f;
-    constexpr float kNoiseMax    = 0.42f;
+    constexpr float kNoiseMax    = 0.80f;   // louder noise: about +9 dB at mid knob, +5.6 dB at max
     constexpr float kNoiseDirect = 0.85f;
     constexpr float kNoiseWash   = 0.6f;
 
@@ -164,7 +164,7 @@ void BrumeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     dryGain  = pWet->load() > 0.5f ? 0.0f : 1.0f;
     sendAmt  = pReverb->load() * pReverb->load() * 1.2f;
-    noiseAmt = std::pow (pNoise->load(), 1.3f) * kNoiseMax;
+    noiseAmt = std::pow (pNoise->load(), 0.8f) * kNoiseMax;
     tremDepth = pTremolo->load();
     sendGate = noiseGate = pOn->load() > 0.5f ? 1.0f : 0.0f;
 
@@ -269,7 +269,7 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
     // targets
     const float rv = pReverb->load();
     const float tSend  = rv * rv * 1.2f;
-    const float tNoise = std::pow (pNoise->load(), 1.3f) * kNoiseMax;
+    const float tNoise = std::pow (pNoise->load(), 0.8f) * kNoiseMax;
     const float tTrem  = pTremolo->load();
     const float tDry   = pWet->load() > 0.5f ? 0.0f : 1.0f;
     const float tGate  = pOn->load() > 0.5f ? 1.0f : 0.0f;

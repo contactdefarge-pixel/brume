@@ -109,7 +109,7 @@ int main()
     std::printf ("wet only (reverb)    : %6.1f dB\n", render (p, fs, 4, -16, 2));
     setParam (p, brume::id::wet, 0);
     setParam (p, brume::id::tremolo, 0); setParam (p, brume::id::noise, 1);
-    std::printf ("noise alone max      : %6.1f dB  (target about -16)\n", render (p, fs, 4, -300, 2));
+    std::printf ("noise alone max      : %6.1f dB  (louder since v1.0.18)\n", render (p, fs, 4, -300, 2));
     setParam (p, brume::id::noise, 0.5f);
     std::printf ("noise alone 0.5      : %6.1f dB\n", render (p, fs, 4, -300, 2));
     // off: the tail must fade, not stop
