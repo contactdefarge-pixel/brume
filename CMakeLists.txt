@@ -48,6 +48,10 @@ juce_add_plugin(Brume
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "Brume a besoin de l'entree audio pour traiter le son de Traktor (BlackHole).")
 
+# Michroma font for the logo plate (SIL Open Font License, Resources/OFL-Michroma.txt)
+juce_add_binary_data(BrumeAssets SOURCES Resources/Michroma-Regular.ttf)
+set_target_properties(BrumeAssets PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
 target_sources(Brume PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
@@ -88,7 +92,8 @@ target_link_libraries(Brume
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
-        juce::juce_recommended_warning_flags)
+        juce::juce_recommended_warning_flags
+        BrumeAssets)
 
 # Offline level test (not shipped): renders noise through the processor and prints levels.
 option(BRUME_BUILD_TESTS "Build the offline level test" OFF)
@@ -97,5 +102,5 @@ if(BRUME_BUILD_TESTS)
     target_sources(BrumeTest PRIVATE Tests/LevelTest.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Updater.cpp Source/F1Reader.cpp)
     brume_add_hidapi(BrumeTest)
     target_compile_definitions(BrumeTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
-    target_link_libraries(BrumeTest PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
+    target_link_libraries(BrumeTest PRIVATE BrumeAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
 endif()

@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "BinaryData.h"
 
 using namespace brume::ui;
 
@@ -9,6 +10,16 @@ namespace
     juce::Font silkFont (float h, float kerning = 0.12f)
     {
         juce::Font f (juce::FontOptions (h, juce::Font::bold));
+        f.setExtraKerningFactor (kerning);
+        return f;
+    }
+
+    // logo typeface (Michroma, embedded)
+    juce::Font logoFont (float h, float kerning)
+    {
+        static juce::Typeface::Ptr tf = juce::Typeface::createSystemTypefaceFor (BinaryData::MichromaRegular_ttf,
+                                                                                  BinaryData::MichromaRegular_ttfSize);
+        juce::Font f (juce::FontOptions (tf).withHeight (h));
         f.setExtraKerningFactor (kerning);
         return f;
     }
@@ -556,15 +567,25 @@ void BrumeEditor::paint (juce::Graphics& g)
         }
     }
 
-    // brand
-    g.setColour (juce::Colours::white.withAlpha (0.65f));
-    g.setFont (silkFont (72.0f, 0.08f));
-    g.drawText ("BRUME", juce::Rectangle<float> (pb.getX(), pb.getY() + 281.5f, pb.getWidth(), 76.0f), juce::Justification::centred);
-    g.setColour (silk);
-    g.drawText ("BRUME", juce::Rectangle<float> (pb.getX(), pb.getY() + 280.0f, pb.getWidth(), 76.0f), juce::Justification::centred);
-    g.setFont (silkFont (10.5f, 0.32f));
-    g.setColour (silk.withAlpha (0.85f));
-    g.drawText ("STEREO REVERB  -  NOISE", juce::Rectangle<float> (pb.getX(), pb.getY() + 354.0f, pb.getWidth(), 16.0f), juce::Justification::centred);
+    // brand: black logo plate (BRUME / rule / WHITE NOISE - REVERB)
+    {
+        const auto plate = juce::Rectangle<float> (300.0f, 112.0f).withCentre ({ pb.getCentreX(), pb.getY() + 342.0f });
+        g.setColour (enclHi.withAlpha (0.9f));                       // lower lip catching the light
+        g.fillRoundedRectangle (plate.translated (0.0f, 1.5f), 16.0f);
+        g.setColour (juce::Colour (0xff0c0d0e));
+        g.fillRoundedRectangle (plate, 16.0f);
+        g.setColour (knobHi.withAlpha (0.9f));                       // top inner highlight
+        g.drawLine (plate.getX() + 14.0f, plate.getY() + 1.0f, plate.getRight() - 14.0f, plate.getY() + 1.0f, 1.0f);
+
+        g.setColour (pointer);
+        g.setFont (logoFont (38.0f, 0.115f));
+        g.drawText ("BRUME", juce::Rectangle<float> (plate.getX(), plate.getY() + 20.0f, plate.getWidth() + 4.0f, 42.0f), juce::Justification::centred);
+        g.setColour (knobHi);
+        g.fillRect (plate.getX() + 26.0f, plate.getY() + 72.0f, plate.getWidth() - 52.0f, 1.0f);
+        g.setColour (juce::Colour (0xffb4b9be));
+        g.setFont (logoFont (8.5f, 0.55f));
+        g.drawText (juce::String::fromUTF8 ("WHITE NOISE \xc2\xb7 REVERB"), juce::Rectangle<float> (plate.getX(), plate.getY() + 82.0f, plate.getWidth() + 5.0f, 14.0f), juce::Justification::centred);
+    }
 
     // footswitch LEDs and labels
     const auto on = onSwitch.getBounds().toFloat();
