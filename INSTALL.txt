@@ -61,26 +61,10 @@ LA F1 ENTIÈREMENT POUR BRUME STATION (pads en couleur, écran)
 Traktor > Préférences > Controller Manager : supprimer (ou désactiver) l'appareil "Traktor Kontrol F1".
 Traktor reste piloté par la X1 et la Z1. En haut à droite de Brume Station : "F1 CONNECTED".
 
-LES 4 COLONNES (bouton du haut / fader / bouton MUTE en bas ; SHIFT = deuxième fonction)
-1 BRUME     LENGTH (longueur de réverbe) / NOISE        SHIFT : CHARACTER / quantité envoyée dans la réverbe
-2 SNARE     SPEED (1/4 1/8 1/8T 1/16 1/16T 1/32) / PITCH (-12 à +24)   SHIFT : LEVEL / TONE
-3 PATTERNS  DENSITY (enlève ou ajoute des coups) / VOLUME   SHIFT : KIT
-4 PAD       CHORD (degré dans la tonalité) / OPEN (filtre)  SHIFT : TIMBRE
-MUTE = démarrer / arrêter la colonne. Avec QUANT allumé, ça démarre sur le prochain temps
-(PATTERNS : sur la prochaine mesure) et le bouton clignote en attendant.
-
-LES PADS (mode PERFORM)
-Rangée 1 : BUILD 2 / 4 / 8 / 16 mesures (roulement qui accélère et monte jusqu'au drop, l'écran compte les temps)
-Rangée 2 : IMPACT, CRASH, CLAP, SWELL (montée de souffle qui s'arrête pile sur la mesure)
-Rangée 3 : accords I, IV, V, VI de la tonalité
-Rangée 4 : DROP (tout s'arrête, les queues restent), KILL (silence total), TAP (tempo sans synchro), SWELL 2 mesures
-
-MODE STEP (bouton TYPE) : les 16 pads = les 16 pas du rythme. L'encodeur choisit l'instrument
-(KICK, CLAP, HAT, OPEN HAT, PERC). SHIFT + pads 1-4 = mémoire 1-4, SHIFT + pad 13 = effacer, SHIFT + pad 16 = rappel.
-
-AUTRES BOUTONS : encodeur = tonalité (SHIFT + encodeur = mineur / majeur, l'écran affiche 1-12, point = majeur B),
-SYNC = le temps actuel devient le 1 de la mesure, QUANT = calé sur le temps ou immédiat,
-BROWSE = tap tempo, REVERSE = swell.
+FONCTIONNEMENT : tout est expliqué dans l'app (bouton "?" en bas à droite = WIKI).
+En bref : SHIFT + pad 1 à 5 choisit le programme (BRUME, ROLL, PATTERNS, PAD, FX), qui prend alors
+les 4 boutons rotatifs, les 16 pads et l'encodeur. Les 4 faders (volumes) et les 4 STOP (marche/arrêt)
+restent fixes. TYPE = DROP, CAPTURE = HOLD (roulements verrouillés), SIZE = programme suivant.
 
 SYNCHRO TRAKTOR : comme pour Brume (Traktor Virtual Output + horloge MIDI), puis dans Brume Station :
 Options > Audio/MIDI Settings > cocher "Traktor Virtual Output". Sortie audio : vers Traktor via BlackHole

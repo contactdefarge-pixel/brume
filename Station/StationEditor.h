@@ -50,6 +50,19 @@ private:
         void mouseUp (const juce::MouseEvent&) override   { ed.send (juce::MidiMessage::noteOff (16, index + 1)); }
     };
 
+    // in-app wiki: how everything works, one tab per program
+    struct Help : public juce::Component
+    {
+        StationEditor& ed;
+        juce::TextEditor text;
+        juce::OwnedArray<juce::TextButton> tabs;
+        juce::TextButton close { "X" };
+        explicit Help (StationEditor& e);
+        void show (int tab);
+        void paint (juce::Graphics&) override;
+        void resized() override;
+    };
+
     struct Column
     {
         juce::Slider knob, fader;
@@ -65,13 +78,16 @@ private:
     std::vector<std::unique_ptr<Pad>> pads;
     juce::TextButton syncBtn { "SYNC" }, quantBtn { "QUANT" }, captureBtn { "CAPTURE" },
                      shiftBtn { "SHIFT" }, reverseBtn { "REVERSE" }, typeBtn { "TYPE" }, sizeBtn { "SIZE" }, browseBtn { "BROWSE" },
-                     encLeft { "<" }, encRight { ">" }, encPush { "PUSH" };
+                     encLeft { "<" }, encRight { ">" }, encPush { "PUSH" }, helpBtn { "?" };
     juce::ComboBox keyBox;
     juce::Slider bpmSlider, masterKnob;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> quantAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> keyAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt, masterAtt;
     UpdateBanner updateBanner;
+    Help help { *this };
+    int attachedProg = -1; bool attachedShift = false;
+    void reattachKnobs();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StationEditor)
 };

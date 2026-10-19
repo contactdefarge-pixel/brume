@@ -25,21 +25,14 @@ namespace
     }
     juce::Colour fromRgb (juce::uint32 c) { return juce::Colour ((juce::uint8) (c >> 16), (juce::uint8) (c >> 8), (juce::uint8) c); }
 
-    const char* kNames[4]      = { "BRUME", "SNARE", "PATTERNS", "PAD" };
-    const char* kKnobLabel[4]  = { "LENGTH", "SPEED", "DENSITY", "CHORD" };
-    const char* kAltLabel[4]   = { "CHARACTER", "LEVEL", "KIT", "TIMBRE" };
-    const char* kFaderLabel[4] = { "NOISE", "PITCH", "VOLUME", "OPEN" };
-    const char* kFaderAltLabel[4] = { "SEND", "TONE", "VOLUME", "OPEN" };
-    const char* kKnobIds[4]    = { id::brumeLength, id::snareRate, id::patDensity, id::padChord };
-    const char* kAltIds[4]     = { id::brumeChar, id::snareLevel, id::patKit, id::padTimbre };
-    const char* kFaderIds[4]   = { id::brumeAmount, id::snarePitch, id::patVolume, id::padOpen };
-    const char* kFaderAltIds[4] = { id::brumeSend, id::snareTone, id::patVolume, id::padOpen };
-    const char* kOnIds[4]      = { id::brumeOn, id::snareOn, id::patOn, id::padOn };
+    const char* kNames[4]     = { "BRUME", "ROLL", "PATTERNS", "PAD" };
+    const char* kOnIds[4]     = { id::brumeOn, id::rollOn, id::patOn, id::padOn };
+    const char* kLevelIds[4]  = { id::brumeLevel, id::rollLevel, id::patLevel, id::padLevel };
 
     // F1 geometry (base coordinates)
     const juce::Rectangle<float> kBody { 16.0f, 16.0f, 488.0f, 968.0f };
     constexpr int padSize = 96, padGap = 14, padX0 = 47, padY0 = 486;
-    constexpr int rowY[3] = { 328, 380, 432 };   // middle section: 3 rows of buttons
+    constexpr int rowY[3] = { 328, 380, 432 };
     inline int colCentre (int c) { return padX0 + c * (padSize + padGap) + padSize / 2; }
 }
 
@@ -144,6 +137,169 @@ void StationLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b,
 }
 
 //==============================================================================
+namespace
+{
+    juce::String wikiText (int tab)
+    {
+        auto u = [] (const char* s) { return juce::String::fromUTF8 (s); };
+        switch (tab)
+        {
+            case 0: return u (
+"LE PRINCIPE\n\n"
+"Brume Station fonctionne par PROGRAMMES. Chaque programme prend toute la F1 pour lui : les 4 boutons rotatifs "
+"(8 réglages avec SHIFT), les 16 pads et l'encodeur.\n\n"
+"CHOISIR UN PROGRAMME : maintenir SHIFT et appuyer sur un pad de la rangée du haut.\n"
+"   SHIFT + pad 1 = BRUME     SHIFT + pad 2 = ROLL     SHIFT + pad 3 = PATTERNS\n"
+"   SHIFT + pad 4 = PAD       SHIFT + pad 5 = FX\n"
+"   (ou SIZE : programme suivant). L'écran affiche P1 à P5, les pads prennent la couleur du programme.\n\n"
+"CE QUI NE CHANGE JAMAIS (pour mixer à tout moment) :\n"
+"   - les 4 FADERS = volume de BRUME, ROLL, PATTERNS, PAD\n"
+"   - les 4 boutons STOP (sous les pads) = marche / arrêt de BRUME, ROLL, PATTERNS, PAD\n\n"
+"Les programmes continuent de jouer quand on change de page : on peut lancer un rythme, passer sur ROLL "
+"pour faire un roulement, puis sur PAD pour changer d'accord, sans rien couper.\n\n"
+"Avec QUANT allumé, tout part sur le temps (PATTERNS sur la mesure) et le bouton STOP clignote en attendant.\n\n"
+"À L'ÉCRAN : SHIFT reste enfoncé d'un clic (re-cliquer pour le relâcher). Les noms en orange sous les boutons "
+"rotatifs sont les fonctions SHIFT.");
+            case 1: return u (
+"BRUME (SHIFT + pad 1) - bruit blanc et réverbe, comme la pédale\n\n"
+"BOUTONS : LENGTH (longueur de réverbe) · CHARACTER (petite pièce -> grand hall) · AIR (brillance) · "
+"TREMOLO (profondeur du trémolo sur le bruit)\n"
+"AVEC SHIFT : TREM RATE (vitesse calée sur le tempo) · LOW CUT (coupe les graves de Brume) · "
+"SEND (quantité des autres programmes envoyée dans la réverbe) · NOISE COLOR (bruit sombre -> brillant)\n\n"
+"PADS\n"
+"   Rangée 1 : trémolo à 1/4, 1/8, 1/16, 1/32\n"
+"   Rangée 2 : longueur de réverbe 1 s, 3 s, 6 s, 12 s\n"
+"   Rangée 3 (tant qu'on appuie) : FREEZE (la réverbe tient à l'infini) · THROW (tout part dans la réverbe) · "
+"NOISE (bruit même si BRUME est arrêté) · TREM ON (trémolo marche / arrêt)\n"
+"   Rangée 4 : SMALL, PLATE, HALL, VAST (caractère + longueur prêts à l'emploi)\n\n"
+"ENCODEUR : longueur fine.  FADER 1 : volume du bruit.  STOP 1 : marche / arrêt (la queue s'éteint selon LENGTH).\n\n"
+"La réverbe de Brume sert aussi aux autres programmes (réglage REVERB de chacun).");
+            case 2: return u (
+"ROLL (SHIFT + pad 2) - roulements façon X-PAD du RMX-1000\n\n"
+"PADS\n"
+"   Rangée 1 : choisir le son : SNARE, CLAP, KICK, HAT (un appui le joue une fois)\n"
+"   Rangées 2-3 : ROULEMENT TANT QU'ON APPUIE, calé sur le tempo :\n"
+"      1/2, 1/4, 1/8, 1/16 / 1/32, 1/8T, 1/16T, 1/64\n"
+"      Appuyer sur un autre pad change la vitesse en direct. Relâcher = stop.\n"
+"   Rangée 4 : BUILD 2, 4, 8, 16 mesures : roulement automatique qui accélère, monte d'une octave, "
+"s'ouvre (filtre) et s'arrête pile au drop. L'écran compte les temps.\n\n"
+"HOLD (bouton CAPTURE) : les roulements restent verrouillés sans garder le doigt ; ré-appuyer sur le pad pour arrêter.\n\n"
+"BOUTONS : PITCH (-12 à +12) · DECAY (son court -> long) · FILTER (gauche = passe-bas, droite = passe-haut, milieu = ouvert) · "
+"REVERB (envoi dans la réverbe de Brume)\n"
+"AVEC SHIFT : TONE (caisse claire grasse -> brillante) · SWING · PAN · DRIVE (saturation)\n\n"
+"ENCODEUR : pitch demi-ton par demi-ton (appui = remise à 0).  FADER 2 : volume.  STOP 2 : coupe ROLL.\n\n"
+"Astuce : pendant un roulement, monte PITCH et FILTER vers la droite pour une montée maison.");
+            case 3: return u (
+"PATTERNS (SHIFT + pad 3) - boîte à rythmes 16 pas\n\n"
+"PADS : les 16 pas de l'instrument choisi (allumé = coup). Le pas en blanc = la lecture.\n"
+"ENCODEUR : choisir l'instrument : 1 KICK, 2 CLAP, 3 HAT, 4 OPEN HAT, 5 PERC (l'écran affiche t1 à t5 ; "
+"appui sur l'encodeur = instrument suivant)\n"
+"SHIFT + ENCODEUR ou SHIFT + pads 9 à 12 : mémoire de rythme 1 à 4\n"
+"SHIFT + pad 13 : effacer l'instrument · SHIFT + pad 16 : recharger le rythme d'origine de la mémoire\n"
+"Mémoires d'origine : 1 house, 2 techno, 3 breaks, 4 minimal.\n\n"
+"BOUTONS : DENSITY (gauche = enlève des coups, droite = en ajoute) · TUNE (accorde le kit) · SWING · "
+"FILTER (passe-bas / passe-haut)\n"
+"AVEC SHIFT : DECAY · DRIVE · REVERB · ACCENT (temps forts plus marqués)\n\n"
+"FADER 3 : volume.  STOP 3 : marche / arrêt (démarre sur la mesure suivante).");
+            case 4: return u (
+"PAD (SHIFT + pad 4) - nappe d'accords dans la tonalité\n\n"
+"PADS\n"
+"   Rangées 1-2 : les 7 accords de la tonalité (I à VII) + I à l'octave. Un appui lance la nappe si elle est arrêtée.\n"
+"   Rangée 3 : ARP (arpège marche / arrêt) · ARP 1/8 · ARP 1/16 · ARP 1/16T\n"
+"   Rangée 4 : OCT -1 · OCT 0 · OCT +1 · SUS (accord suspendu, plus ouvert)\n\n"
+"ENCODEUR : tonalité (roue Camelot 1-12, comme dans Traktor). SHIFT + encodeur : mineur (A) / majeur (B). "
+"L'écran affiche la tonalité ; le point = majeur.\n\n"
+"BOUTONS : OPEN (le filtre s'ouvre, idéal pour une montée) · TIMBRE (chaud -> aérien) · ATTACK · RELEASE\n"
+"AVEC SHIFT : WIDTH (largeur stéréo) · REVERB · ARP RATE · OCTAVE\n\n"
+"FADER 4 : volume.  STOP 4 : marche / arrêt (fondu selon ATTACK / RELEASE).\n\n"
+"Mets la tonalité du morceau qui joue dans Traktor (même numéro Camelot) : tous les accords seront justes.");
+            case 5: return u (
+"FX (SHIFT + pad 5) - effets ponctuels et transitions\n\n"
+"PADS\n"
+"   Rangée 1 : IMPACT · CRASH · CLAP · SWELL (souffle qui monte jusqu'à la prochaine mesure)\n"
+"   Rangée 2 : SWELL 2 (2 mesures) · RISER (longue montée, longueur au bouton 4) · DOWN (descente) · SUB DROP\n"
+"   Rangée 3 : DROP (tout s'arrête sauf les queues de réverbe) · KILL (silence total) · TAP (tempo sans synchro) · "
+"BAR 1 (le temps actuel devient le 1)\n"
+"   Rangée 4 : DROP + IMPACT · DROP + CRASH · BUILD 8 · BUILD 16 (roulement ROLL automatique)\n\n"
+"BOUTONS : LEVEL · REVERB · TONE (sombre -> brillant) · RISER LEN (2, 4, 8, 16 mesures)\n\n"
+"Avec QUANT, IMPACT, CRASH, CLAP et SUB DROP tombent sur le temps.");
+            default: return u (
+"BOUTONS DU HAUT\n"
+"   SYNC = BAR 1 : le temps actuel devient le premier temps de la mesure\n"
+"   QUANT : départs calés sur le temps / immédiats\n"
+"   CAPTURE = HOLD : verrouille les roulements de ROLL\n"
+"   REVERSE = SWELL : souffle jusqu'à la prochaine mesure\n"
+"   TYPE = DROP : tout s'arrête, les queues restent (accessible depuis n'importe quel programme)\n"
+"   SIZE : programme suivant\n"
+"   BROWSE = TAP : taper le tempo quand rien ne synchronise Brume Station\n\n"
+"SYNCHRO AVEC TRAKTOR\n"
+"   1. Traktor > Préférences > Controller Manager > Add > Generic MIDI, Out-Port : Traktor Virtual Output\n"
+"   2. Traktor > Préférences > External Sync : cocher Enable MIDI Clock, puis lancer l'horloge (métronome)\n"
+"   3. Brume Station > Options > Audio/MIDI Settings : cocher Traktor Virtual Output en entrée MIDI\n"
+"   En bas de la fenêtre : SYNC TRAKTOR et le tempo.\n\n"
+"LA F1\n"
+"   Retirer la F1 du Controller Manager de Traktor : Brume Station la lit en USB et pilote ses couleurs "
+"et son écran. En bas : F1 CONNECTED.\n\n"
+"SON\n"
+"   Options > Audio/MIDI Settings > Output : la sortie de ta carte son, ou BlackHole 2ch pour entrer dans "
+"Traktor sur un deck en Live Input.");
+        }
+    }
+}
+
+StationEditor::Help::Help (StationEditor& e) : ed (e)
+{
+    static const char* names[] = { "PRINCIPE", "BRUME", "ROLL", "PATTERNS", "PAD", "FX", "BOUTONS" };
+    for (int i = 0; i < 7; ++i)
+    {
+        auto* b = tabs.add (new juce::TextButton (names[i]));
+        b->setClickingTogglesState (false);
+        b->onClick = [this, i] { show (i); };
+        addAndMakeVisible (b);
+    }
+    close.onClick = [this] { setVisible (false); };
+    addAndMakeVisible (close);
+    text.setMultiLine (true);
+    text.setReadOnly (true);
+    text.setScrollbarsShown (true);
+    text.setCaretVisible (false);
+    text.setFont (juce::Font (juce::FontOptions (14.5f)));
+    text.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff111316));
+    text.setColour (juce::TextEditor::textColourId, juce::Colour (0xffe8e6df));
+    text.setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    text.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    addAndMakeVisible (text);
+}
+
+void StationEditor::Help::show (int tab)
+{
+    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setToggleState (i == tab, juce::dontSendNotification);
+    text.setText (wikiText (tab), false);
+    text.moveCaretToTop (false);
+    setVisible (true);
+    toFront (false);
+}
+
+void StationEditor::Help::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xf0111316));
+    g.setColour (amber);
+    g.setFont (logoFont (15.0f, 0.15f));
+    g.drawText ("WIKI BRUME STATION", getLocalBounds().removeFromTop (44).reduced (14, 0), juce::Justification::centredLeft);
+}
+
+void StationEditor::Help::resized()
+{
+    auto r = getLocalBounds();
+    auto top = r.removeFromTop (44);
+    close.setBounds (top.removeFromRight (44).reduced (6));
+    auto tabRow = r.removeFromTop (40).reduced (8, 4);
+    const int w = tabRow.getWidth() / tabs.size();
+    for (auto* b : tabs) b->setBounds (tabRow.removeFromLeft (w).reduced (2, 0));
+    text.setBounds (r.reduced (10));
+}
+
+//==============================================================================
 void StationEditor::Pad::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (2.0f);
@@ -158,28 +314,9 @@ void StationEditor::Pad::paint (juce::Graphics& g)
     g.fillRoundedRectangle (r.reduced (3.0f), 7.0f);
     g.setColour (juce::Colours::white.withAlpha (0.06f));
     g.drawRoundedRectangle (r, 9.0f, 1.0f);
-
-    juce::String label;
-    if (ed.proc.isStepMode())
-    {
-        if (ed.proc.isShiftHeld())
-            label = index < numSlots ? "SLOT " + juce::String (index + 1) : index == 12 ? "CLEAR" : index == 15 ? "RESET" : "";
-        else
-            label = juce::String (index + 1);
-    }
-    else
-    {
-        label = performPadName (index);
-        if (index >= 8 && index < 12)
-        {
-            static const int deg[] = { 0, 3, 4, 5 };
-            const int key = (int) ed.proc.apvts.getRawParameterValue (id::key)->load();
-            label = juce::String ("CHORD ") + degreeName (deg[index - 8], keyIsMajor (key));
-        }
-    }
-    g.setColour (bright > 0.55f ? juce::Colours::black.withAlpha (0.75f) : pointerCol.withAlpha (0.8f));
-    g.setFont (silkFont (11.0f, 0.06f));
-    g.drawText (label, r.reduced (6.0f).removeFromBottom (18.0f), juce::Justification::centred);
+    g.setColour (bright > 0.55f ? juce::Colours::black.withAlpha (0.75f) : pointerCol.withAlpha (0.82f));
+    g.setFont (silkFont (11.0f, 0.04f));
+    g.drawFittedText (ed.proc.getPadLabel (index), r.reduced (6.0f).removeFromBottom (20.0f).toNearestInt(), juce::Justification::centred, 1, 0.7f);
 }
 
 //==============================================================================
@@ -204,10 +341,10 @@ StationEditor::StationEditor (StationProcessor& p) : juce::AudioProcessorEditor 
         col.stop.setButtonText (kNames[c]);
         col.stop.setClickingTogglesState (true);
         body.addAndMakeVisible (col.stop);
-        col.knobAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, kKnobIds[c], col.knob);
-        col.faderAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, kFaderIds[c], col.fader);
+        col.faderAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, kLevelIds[c], col.fader);
         col.stopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, kOnIds[c], col.stop);
     }
+    reattachKnobs();
 
     for (int i = 0; i < 16; ++i)
     {
@@ -215,22 +352,23 @@ StationEditor::StationEditor (StationProcessor& p) : juce::AudioProcessorEditor 
         body.addAndMakeVisible (*pads.back());
     }
 
-    // the F1's buttons send exactly what the hardware sends
+    // the buttons send exactly what the F1 sends
     auto note = [this] (int n) { send (juce::MidiMessage::noteOn (16, n, (juce::uint8) 127)); };
     shiftBtn.setClickingTogglesState (true);   // on screen SHIFT latches (on the F1 you hold it)
     shiftBtn.onClick = [this] { send (shiftBtn.getToggleState() ? juce::MidiMessage::noteOn (16, 24, (juce::uint8) 127) : juce::MidiMessage::noteOff (16, 24)); };
     syncBtn.onClick    = [note] { note (21); };
+    captureBtn.onClick = [note] { note (23); };
     reverseBtn.onClick = [note] { note (25); };
     typeBtn.onClick    = [note] { note (26); };
+    sizeBtn.onClick    = [note] { note (27); };
     browseBtn.onClick  = [note] { note (28); };
     encPush.onClick    = [note] { note (29); };
     encLeft.onClick  = [this] { send (juce::MidiMessage::controllerEvent (16, 9, 127)); };
     encRight.onClick = [this] { send (juce::MidiMessage::controllerEvent (16, 9, 1)); };
-    captureBtn.setEnabled (false);
-    sizeBtn.setEnabled (false);
     quantBtn.setClickingTogglesState (true);
     quantAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, id::quant, quantBtn);
-    for (auto* b : { &syncBtn, &quantBtn, &captureBtn, &shiftBtn, &reverseBtn, &typeBtn, &sizeBtn, &browseBtn, &encLeft, &encRight, &encPush })
+    helpBtn.onClick = [this] { help.setBounds (getLocalBounds()); help.show (1 + proc.getProgram()); };
+    for (auto* b : { &syncBtn, &quantBtn, &captureBtn, &shiftBtn, &reverseBtn, &typeBtn, &sizeBtn, &browseBtn, &encLeft, &encRight, &encPush, &helpBtn })
         body.addAndMakeVisible (*b);
 
     if (auto* kp = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (id::key)))
@@ -244,8 +382,6 @@ StationEditor::StationEditor (StationProcessor& p) : juce::AudioProcessorEditor 
 
     bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     bpmSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    bpmSlider.setColour (juce::Slider::textBoxTextColourId, pointerCol);
-    bpmSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     body.addAndMakeVisible (bpmSlider);
     bpmAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id::bpm, bpmSlider);
 
@@ -258,8 +394,8 @@ StationEditor::StationEditor (StationProcessor& p) : juce::AudioProcessorEditor 
 
     layoutBody();
     addChildComponent (updateBanner);
+    addChildComponent (help);
 
-    // resizable, keeps the F1's proportions; opens at a laptop-friendly size
     setResizable (true, true);
     setResizeLimits ((int) (kW * 0.55f), (int) (kH * 0.55f), (int) (kW * 1.3f), (int) (kH * 1.3f));
     if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) kW / (double) kH);
@@ -273,9 +409,22 @@ StationEditor::~StationEditor()
     setLookAndFeel (nullptr);
 }
 
+void StationEditor::reattachKnobs()
+{
+    const int prog = proc.getProgram();
+    const bool shift = proc.isShiftHeld();
+    if (prog == attachedProg && shift == attachedShift) return;
+    attachedProg = prog; attachedShift = shift;
+    for (int c = 0; c < 4; ++c)
+    {
+        auto& col = cols[(size_t) c];
+        col.knobAtt.reset();
+        col.knobAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, knobDef (prog, c, shift).pid, col.knob);
+    }
+}
+
 void StationEditor::layoutBody()
 {
-    // F1 top to bottom: knobs, faders, middle section, 4x4 pads, STOP buttons
     for (int c = 0; c < 4; ++c)
     {
         auto& col = cols[(size_t) c];
@@ -284,7 +433,6 @@ void StationEditor::layoutBody()
         col.fader.setBounds (juce::Rectangle<int> (60, 140).withCentre ({ cx, 222 }));
         col.stop.setBounds (juce::Rectangle<int> (padSize, 34).withCentre ({ cx, 940 }));
     }
-    // middle section (columns aligned with the pads):
     //   SYNC    QUANT  CAPTURE | display
     //   REVERSE TYPE   SIZE    | encoder
     //   SHIFT                  | BROWSE
@@ -296,41 +444,27 @@ void StationEditor::layoutBody()
     encLeft.setBounds (enc.getX(), enc.getY() + 2, 26, 30);
     encPush.setBounds (enc.getX() + 28, enc.getY() - 4, 40, 42);
     encRight.setBounds (enc.getRight() - 26, enc.getY() + 2, 26, 30);
-
     for (int i = 0; i < 16; ++i)
         pads[(size_t) i]->setBounds (padX0 + (i % 4) * (padSize + padGap), padY0 + (i / 4) * (padSize + padGap), padSize, padSize);
 
-    // strip under the controller: key, tempo, master
-    keyBox.setBounds (190, 1000, 128, 26);
-    bpmSlider.setBounds (330, 1000, 120, 26);
-    masterKnob.setBounds (458, 990, 44, 44);
+    keyBox.setBounds (186, 1000, 118, 26);
+    bpmSlider.setBounds (312, 1000, 112, 26);
+    masterKnob.setBounds (428, 990, 40, 40);
+    helpBtn.setBounds (472, 994, 34, 34);
 }
 
 void StationEditor::resized()
 {
     body.setTransform (juce::AffineTransform::scale ((float) getWidth() / (float) kW));
     updateBanner.setBounds (0, 0, getWidth(), 40);
+    if (help.isVisible()) help.setBounds (getLocalBounds());
 }
 
 void StationEditor::timerCallback()
 {
-    // SHIFT turns knobs and faders into their second function, on screen as on the F1
-    static bool lastShift = false;
-    const bool shift = proc.isShiftHeld();
-    if (shift != lastShift)
-    {
-        lastShift = shift;
-        for (int c = 0; c < 4; ++c)
-        {
-            auto& col = cols[(size_t) c];
-            col.knobAtt.reset(); col.faderAtt.reset();
-            col.knobAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, (shift ? kAltIds : kKnobIds)[c], col.knob);
-            col.faderAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, (shift ? kFaderAltIds : kFaderIds)[c], col.fader);
-        }
-        shiftBtn.setToggleState (shift, juce::dontSendNotification);
-    }
-    typeBtn.setToggleState (proc.isStepMode(), juce::dontSendNotification);
-    typeBtn.setButtonText (proc.isStepMode() ? "STEP" : "TYPE");
+    reattachKnobs();
+    shiftBtn.setToggleState (proc.isShiftHeld(), juce::dontSendNotification);
+    captureBtn.setToggleState (proc.isHoldOn(), juce::dontSendNotification);
     bpmSlider.setEnabled (proc.getSyncSource() == 0);
     body.repaint();
 }
@@ -341,8 +475,9 @@ void StationEditor::paintBody (juce::Graphics& g)
 {
     g.fillAll (desk);
     const auto pb = kBody;
+    const int prog = proc.getProgram();
+    const auto progCol = fromRgb (programColour (prog));
 
-    // enclosure: the F1's shape, in Brume's light brushed metal
     g.setColour (juce::Colours::black.withAlpha (0.5f));
     g.fillRoundedRectangle (pb.translated (0.0f, 8.0f), 22.0f);
     {
@@ -360,7 +495,7 @@ void StationEditor::paintBody (juce::Graphics& g)
         }
     }
 
-    // display: two digits like the F1 (key, build countdown or track) + beat dots
+    // display
     {
         const auto d = juce::Rectangle<float> ((float) (padX0 + 3 * (padSize + padGap)), (float) rowY[0] - 6.0f, (float) padSize, 46.0f);
         g.setColour (juce::Colour (0xff0a0b0c));
@@ -376,36 +511,41 @@ void StationEditor::paintBody (juce::Graphics& g)
             g.fillEllipse (dot);
         }
     }
+    // secondary names under the buttons
     g.setColour (silk.withAlpha (0.7f));
     g.setFont (silkFont (9.0f, 0.12f));
-    g.drawText (proc.isStepMode() ? "TRACK" : "KEY", encPush.getBounds().toFloat().translated (0.0f, 42.0f).withHeight (10.0f).expanded (20.0f, 0.0f), juce::Justification::centred);
-    g.drawText ("TAP", browseBtn.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred);
-    g.drawText ("SWELL", reverseBtn.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred);
-    g.drawText (proc.isStepMode() ? "PERFORM" : "STEP EDIT", typeBtn.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred);
-    g.drawText ("BAR 1", syncBtn.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred);
+    auto under = [&] (juce::Component& b, const juce::String& t) { g.drawText (t, b.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred); };
+    under (syncBtn, "BAR 1"); under (captureBtn, "HOLD"); under (reverseBtn, "SWELL"); under (typeBtn, "DROP");
+    under (sizeBtn, "NEXT PROGRAM"); under (browseBtn, "TAP");
+    under (encPush, prog == progPad ? "KEY" : prog == progPatterns ? "INSTRUMENT" : prog == progRoll ? "PITCH" : prog == progBrume ? "LENGTH" : "");
+    under (shiftBtn, "+ PAD = PROGRAM");
 
-    // column print: name, knob function, fader function
+    // program banner (what the knobs and pads control now)
+    {
+        const auto banner = juce::Rectangle<float> ((float) padX0 + 2.0f * (padSize + padGap), (float) rowY[2] - 2.0f, (float) padSize * 2.0f + padGap - 10.0f + 0.0f, 38.0f)
+                                .withX ((float) padX0 + (float) (padSize + padGap)).withWidth ((float) padSize * 2.0f + padGap);
+        g.setColour (knobCol);
+        g.fillRoundedRectangle (banner, 8.0f);
+        g.setColour (progCol);
+        g.fillRoundedRectangle (banner.withWidth (6.0f).reduced (0.0f, 6.0f).translated (8.0f, 0.0f), 3.0f);
+        g.setFont (logoFont (14.0f, 0.14f));
+        g.drawText ("P" + juce::String (prog + 1) + "  " + programName (prog), banner.withTrimmedLeft (20.0f), juce::Justification::centredLeft);
+    }
+
+    // knob functions of the current program (orange = SHIFT), fader = global volume
     const bool shift = proc.isShiftHeld();
     auto valueOf = [this] (const char* pid) { auto* prm = proc.apvts.getParameter (pid); return prm != nullptr ? prm->getCurrentValueAsText() : juce::String(); };
     for (int c = 0; c < 4; ++c)
     {
         const float cx = (float) colCentre (c);
+        const auto& kd = knobDef (prog, c, shift);
+        g.setColour (shift ? juce::Colour (0xffb06a00) : silk);
+        g.setFont (logoFont (10.0f, 0.1f));
+        g.drawText (kd.label, juce::Rectangle<float> (cx - 55.0f, 34.0f, 110.0f, 16.0f), juce::Justification::centred);
+        g.setFont (silkFont (10.5f, 0.06f));
+        g.drawText (valueOf (kd.pid), juce::Rectangle<float> (cx - 55.0f, 124.0f, 110.0f, 14.0f), juce::Justification::centred);
         g.setColour (silk);
-        g.setFont (logoFont (11.5f, 0.12f));
-        g.drawText (kNames[c], juce::Rectangle<float> (cx - 55.0f, 34.0f, 110.0f, 16.0f), juce::Justification::centred);
-        const char* kid = shift ? kAltIds[c] : kKnobIds[c];
-        juce::String kv = valueOf (kid);
-        if (c == 3 && ! shift)
-        {
-            const int key = (int) proc.apvts.getRawParameterValue (id::key)->load();
-            kv = degreeName (chordDegree (proc.apvts.getRawParameterValue (id::padChord)->load()), keyIsMajor (key));
-        }
-        g.setFont (silkFont (10.5f, 0.08f));
-        g.setColour (shift ? juce::Colour (0xffb06a00) : silk);
-        g.drawText (juce::String (shift ? kAltLabel[c] : kKnobLabel[c]) + "  " + kv, juce::Rectangle<float> (cx - 55.0f, 124.0f, 110.0f, 14.0f), juce::Justification::centred);
-        g.setColour (shift ? juce::Colour (0xffb06a00) : silk);
-        g.drawText (juce::String (shift ? kFaderAltLabel[c] : kFaderLabel[c]) + "  " + valueOf (shift ? kFaderAltIds[c] : kFaderIds[c]),
-                    juce::Rectangle<float> (cx - 55.0f, 296.0f, 110.0f, 14.0f), juce::Justification::centred);
+        g.drawText (juce::String (kNames[c]) + "  " + valueOf (kLevelIds[c]), juce::Rectangle<float> (cx - 55.0f, 296.0f, 110.0f, 14.0f), juce::Justification::centred);
         if (proc.isArmed (c) && std::fmod (juce::Time::getMillisecondCounterHiRes() * 0.006, 1.0) < 0.5)
         {
             g.setColour (amber);
@@ -413,12 +553,11 @@ void StationEditor::paintBody (juce::Graphics& g)
         }
     }
 
-    // print at the bottom of the controller
     g.setColour (silk.withAlpha (0.55f));
     g.setFont (logoFont (9.0f, 0.4f));
-    g.drawText ("BRUME STATION", juce::Rectangle<float> (pb.getX(), pb.getBottom() - 26.0f, pb.getWidth(), 14.0f), juce::Justification::centred);
+    g.drawText ("BRUME STATION", juce::Rectangle<float> (pb.getX(), pb.getBottom() - 24.0f, pb.getWidth(), 14.0f), juce::Justification::centred);
 
-    // strip under the controller: logo, key, tempo, master, status
+    // strip under the controller
     {
         const auto plate = juce::Rectangle<float> (16.0f, 990.0f, 160.0f, 48.0f);
         g.setColour (knobCol);
@@ -433,11 +572,11 @@ void StationEditor::paintBody (juce::Graphics& g)
         g.drawText ("STATION  -  F1", plate.withTop (plate.getY() + 36.0f).withHeight (10.0f).translated (2.0f, 0.0f), juce::Justification::centred);
 
         g.setColour (juce::Colour (0xff9aa0a6));
-        g.setFont (silkFont (8.5f, 0.12f));
-        g.drawText ("KEY", juce::Rectangle<float> (190.0f, 1028.0f, 128.0f, 12.0f), juce::Justification::centred);
-        g.drawText ("TEMPO " + juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1) + " (NO SYNC)",
-                    juce::Rectangle<float> (330.0f, 1028.0f, 124.0f, 12.0f), juce::Justification::centred);
-        g.drawText ("MASTER", juce::Rectangle<float> (450.0f, 1028.0f, 60.0f, 12.0f), juce::Justification::centred);
+        g.setFont (silkFont (8.5f, 0.1f));
+        g.drawText ("KEY", juce::Rectangle<float> (186.0f, 1028.0f, 118.0f, 12.0f), juce::Justification::centred);
+        g.drawText ("TEMPO " + juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1), juce::Rectangle<float> (312.0f, 1028.0f, 112.0f, 12.0f), juce::Justification::centred);
+        g.drawText ("MASTER", juce::Rectangle<float> (418.0f, 1028.0f, 60.0f, 12.0f), juce::Justification::centred);
+        g.drawText ("WIKI", juce::Rectangle<float> (466.0f, 1028.0f, 46.0f, 12.0f), juce::Justification::centred);
 
         const int src = proc.getSyncSource();
         juce::String sync = src == 1 ? "SYNC TRAKTOR" : src == 2 ? "SYNC HOST" : "INTERNAL";

@@ -1,4 +1,4 @@
-// Offline test for Brume Station: levels, CPU, MIDI-clock sync, the snare build, step editing,
+// Offline test for Brume Station: levels, CPU, MIDI-clock sync, programs, rolls, builds, step editing,
 // editor snapshots and a short demo WAV.
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Station/StationProcessor.h"
@@ -10,6 +10,7 @@ static void setP (StationProcessor& p, const char* pid, float v)
 {
     if (auto* prm = p.apvts.getParameter (pid)) prm->setValueNotifyingHost (v);
 }
+static float getP (StationProcessor& p, const char* pid) { return p.apvts.getRawParameterValue (pid)->load(); }
 
 struct Meter { double sumSq = 0; juce::int64 n = 0; float peak = 0; void add (const juce::AudioBuffer<float>& b)
 {
@@ -23,13 +24,12 @@ struct Meter { double sumSq = 0; juce::int64 n = 0; float peak = 0; void add (co
 static const double fs = 48000.0;
 static const int bs = 512;
 
-static Meter render (StationProcessor& p, double seconds, juce::AudioBuffer<float>* record = nullptr, double* cpu = nullptr,
-                     double clockBpm = 0.0)
+static Meter render (StationProcessor& p, double seconds, juce::AudioBuffer<float>* record = nullptr, double* cpu = nullptr, double clockBpm = 0.0)
 {
     Meter m;
     juce::AudioBuffer<float> buf (2, bs);
     juce::MidiBuffer midi;
-    const int blocks = (int) (seconds * fs / bs);
+    const int blocks = std::max (1, (int) std::lround (seconds * fs / bs));
     const double t0 = juce::Time::getMillisecondCounterHiRes();
     static double clockPhase = 0.0;
     for (int b = 0; b < blocks; ++b)
@@ -54,7 +54,10 @@ static Meter render (StationProcessor& p, double seconds, juce::AudioBuffer<floa
     return m;
 }
 
-static void press (StationProcessor& p, int note) { p.sendControl (juce::MidiMessage::noteOn (16, note, (juce::uint8) 127)); p.sendControl (juce::MidiMessage::noteOff (16, note)); }
+static void down (StationProcessor& p, int note) { p.sendControl (juce::MidiMessage::noteOn (16, note, (juce::uint8) 127)); }
+static void up (StationProcessor& p, int note)   { p.sendControl (juce::MidiMessage::noteOff (16, note)); }
+static void press (StationProcessor& p, int note) { down (p, note); up (p, note); }
+static void selectProgram (StationProcessor& p, int prog) { down (p, 24); press (p, prog + 1); up (p, 24); render (p, 0.02); }
 
 int main()
 {
@@ -64,71 +67,79 @@ int main()
 
     std::printf ("silence (all off)    : %6.1f dB\n", render (p, 1.0).rmsDb());
 
+    // programs
+    selectProgram (p, progPatterns);
+    std::printf ("SHIFT + pad 3        : program %d (expect %d) display %s\n", p.getProgram(), progPatterns, p.getDisplayText().toRawUTF8());
+
+    // ROLL: hold the 1/16 pad (pad 8) for 2 s on the snare
+    selectProgram (p, progRoll);
+    press (p, 1);   // SNARE
+    render (p, 0.5);
+    down (p, 8);
+    auto m = render (p, 2.0);
+    up (p, 8);
+    std::printf ("roll 1/16 snare      : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
+    m = render (p, 1.0);
+    std::printf ("after release        : %6.1f dB (tail only)\n", m.rmsDb());
+
+    // HOLD latches the roll
+    press (p, 23); press (p, 7); render (p, 1.0);
+    std::printf ("HOLD + 1/8           : latched %s\n", p.isHoldOn() ? "yes" : "NO");
+    press (p, 7); press (p, 23); render (p, 1.0);
+
+    // patterns
     setP (p, id::patOn, 1.0f);
-    auto m = render (p, 6.0);
-    std::printf ("patterns             : %6.1f dB rms, %5.1f dB peak, step %d\n", m.rmsDb(), m.peakDb(), p.getPlayStep());
-    setP (p, id::patOn, 0.0f); render (p, 1.0);
-
-    setP (p, id::snareOn, 1.0f); setP (p, id::snareRate, 0.6f);
-    m = render (p, 4.0);
-    std::printf ("snare 1/16           : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
-    setP (p, id::snareOn, 0.0f); render (p, 1.0);
-
-    setP (p, id::padOn, 1.0f);
     m = render (p, 6.0);
-    std::printf ("pad                  : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
-    setP (p, id::padOn, 0.0f); render (p, 4.0);
+    std::printf ("patterns             : %6.1f dB rms, %5.1f dB peak, step %d\n", m.rmsDb(), m.peakDb(), p.getPlayStep());
+
+    // pad: pressing a chord pad in the PAD program starts it
+    selectProgram (p, progPad);
+    press (p, 5);   // degree V
+    m = render (p, 5.0);
+    std::printf ("pad + patterns       : %6.1f dB rms, chord %.2f (expect 0.57), pad on %.0f\n", m.rmsDb(), getP (p, id::padChord), getP (p, id::padOn));
 
     setP (p, id::brumeOn, 1.0f);
-    m = render (p, 4.0);
-    std::printf ("brume noise          : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
-
-    setP (p, id::patOn, 1.0f); setP (p, id::snareOn, 1.0f); setP (p, id::padOn, 1.0f);
     double cpu = 0;
     m = render (p, 8.0, nullptr, &cpu);
     std::printf ("everything           : %6.1f dB rms, %5.1f dB peak, CPU %.1f %% of one core\n", m.rmsDb(), m.peakDb(), cpu);
 
-    press (p, 13);   // DROP
-    render (p, 0.1);
-    std::printf ("after DROP           : columns off = %s\n",
-                 p.apvts.getRawParameterValue (id::patOn)->load() < 0.5f && p.apvts.getRawParameterValue (id::snareOn)->load() < 0.5f ? "yes" : "NO");
-    press (p, 14);   // KILL
-    m = render (p, 1.0);
-    std::printf ("after KILL           : %6.1f dB\n", m.rmsDb());
-
-    // build 2 bars at 124 BPM = 3.87 s, quantised to the next bar
-    press (p, 1);
+    // knobs follow the program: knob 1 in PAD = OPEN, SHIFT + knob 1 = WIDTH
+    p.sendControl (juce::MidiMessage::controllerEvent (16, 1, 127));
+    down (p, 24); p.sendControl (juce::MidiMessage::controllerEvent (16, 1, 0)); up (p, 24);
     render (p, 0.05);
-    float maxLeft = -1.0f; int hits = 0;
-    for (int i = 0; i < 120; ++i) { render (p, 0.05); maxLeft = std::max (maxLeft, p.getBuildBeatsLeft()); hits += p.getBuildBeatsLeft() >= 0 ? 1 : 0; }
-    std::printf ("build                : started with %.1f beats left, ran %.1f s\n", maxLeft, hits * 0.05);
-    std::printf ("build after 6 s      : %s\n", p.getBuildBeatsLeft() < 0 ? "finished on the bar" : "STILL RUNNING");
+    std::printf ("PAD knob 1           : open %.2f (expect 1), SHIFT width %.2f (expect 0)\n", getP (p, id::padOpen), getP (p, id::padWidth));
+    p.sendControl (juce::MidiMessage::controllerEvent (16, 5, 0)); render (p, 0.05);
+    std::printf ("fader 1              : brume volume %.2f (expect 0)\n", getP (p, id::brumeLevel));
+    setP (p, id::brumeLevel, 0.5f);
 
-    // MIDI clock from "Traktor" at 128 BPM
+    // DROP (TYPE) and KILL
+    press (p, 26); render (p, 0.1);
+    std::printf ("DROP                 : patterns %.0f pad %.0f brume %.0f (expect 0 0 0)\n", getP (p, id::patOn), getP (p, id::padOn), getP (p, id::brumeOn));
+    selectProgram (p, progFx);
+    press (p, 10); m = render (p, 1.0);
+    std::printf ("KILL                 : %6.1f dB\n", m.rmsDb());
+
+    // build from ROLL (pad 13 = BUILD 2)
+    selectProgram (p, progRoll);
+    press (p, 13);
+    float maxLeft = -1.0f; double ran = 0.0;
+    for (int i = 0; i < 140; ++i) { render (p, bs / fs * 4); maxLeft = std::max (maxLeft, p.getBuildBeatsLeft()); ran += p.getBuildBeatsLeft() >= 0 ? bs * 4 / fs : 0.0; }
+    std::printf ("build 2 bars         : started with %.1f beats left, ran %.2f s (8 beats at 124 = 3.87 s)\n", maxLeft, ran);
+
     render (p, 2.0, nullptr, nullptr, 128.0);
     std::printf ("MIDI clock           : source %d, %.2f BPM (expect 1, 128)\n", p.getSyncSource(), p.getBpm());
     render (p, 1.0);
 
-    // step editor: TYPE, pad 3 on the kick
+    // PATTERNS step edit
+    selectProgram (p, progPatterns);
     const bool before = p.stepIsOn (p.getSlot(), 0, 2);
-    press (p, 26); press (p, 3);
-    render (p, 0.05);
-    std::printf ("step edit            : mode %s, kick step 3 %d -> %d\n", p.isStepMode() ? "STEP" : "PERFORM", (int) before, (int) p.stepIsOn (p.getSlot(), 0, 2));
     press (p, 3); render (p, 0.05);
-
-    // knobs from the F1: CC 2 = snare speed, SHIFT + CC 2 = snare level
-    p.sendControl (juce::MidiMessage::controllerEvent (16, 2, 127));
-    p.sendControl (juce::MidiMessage::noteOn (16, 24, (juce::uint8) 127));
-    p.sendControl (juce::MidiMessage::controllerEvent (16, 2, 0));
-    p.sendControl (juce::MidiMessage::noteOff (16, 24));
-    render (p, 0.05);
-    std::printf ("F1 knob 2            : speed %.2f (expect 1), SHIFT level %.2f (expect 0)\n",
-                 p.apvts.getRawParameterValue (id::snareRate)->load(), p.apvts.getRawParameterValue (id::snareLevel)->load());
-    setP (p, id::snareLevel, 0.8f);
+    std::printf ("step edit            : kick step 3 %d -> %d\n", (int) before, (int) p.stepIsOn (p.getSlot(), 0, 2));
+    press (p, 3);
     p.sendControl (juce::MidiMessage::controllerEvent (16, 9, 1)); render (p, 0.05);
-    std::printf ("encoder in STEP      : track %d (expect 1)\n", p.getSelectedTrack());
+    std::printf ("encoder in PATTERNS  : track %d (expect 1), display %s\n", p.getSelectedTrack(), p.getDisplayText().toRawUTF8());
 
-    // editor snapshots
+    // editor snapshots + wiki
     {
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setVisible (true);
@@ -142,29 +153,44 @@ int main()
             juce::PNGImageFormat().writeImageToStream (img, os);
             std::printf ("snapshot             : %s\n", out.getFullPathName().toRawUTF8());
         };
-        save ("station-step.png");
-        press (p, 26); render (p, 0.05);
-        setP (p, id::patOn, 1.0f); setP (p, id::brumeOn, 1.0f); setP (p, id::padOn, 1.0f);
-        render (p, 2.0);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
-        save ("station-perform.png");
+        setP (p, id::patOn, 1.0f); render (p, 2.0);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+        save ("station-patterns.png");
+        selectProgram (p, progRoll); down (p, 8); render (p, 0.5);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+        save ("station-roll.png");
+        up (p, 8); render (p, 0.1);
+        down (p, 24); render (p, 0.05);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+        save ("station-shift.png");
+        up (p, 24); render (p, 0.05);
+        if (auto* help = ed->findChildWithID ("dummy")) juce::ignoreUnused (help);
+        for (auto* c : ed->getChildren())
+            if (auto* b = dynamic_cast<juce::Component*> (c)) juce::ignoreUnused (b);
     }
 
-    // demo: patterns + pad, then a 4-bar snare build into the drop, impact + crash, the tail rings out
+    // demo: groove + pad, a held snare roll that speeds up and climbs, then a 4-bar build, drop with impact
     {
         StationProcessor d;
         d.prepareToPlay (fs, bs);
         juce::AudioBuffer<float> rec (2, 0);
-        setP (d, id::bpm, d.apvts.getParameter (id::bpm)->convertTo0to1 (124.0f));
         setP (d, id::patOn, 1.0f); setP (d, id::padOn, 1.0f); setP (d, id::padOpen, 0.35f);
-        render (d, 7.74 * 1.0, &rec);                 // ~ 4 bars
+        render (d, 7.74, &rec);
+        selectProgram (d, progRoll);
+        down (d, 6); render (d, 1.94, &rec); up (d, 6);       // 1/4
+        down (d, 7); render (d, 1.94, &rec); up (d, 7);       // 1/8
+        down (d, 8);
+        for (int i = 0; i < 8; ++i) { setP (d, id::rollPitch, 0.5f + 0.03f * i); setP (d, id::rollFilter, 0.5f + 0.03f * i); render (d, 0.242, &rec); }
+        up (d, 8);
+        down (d, 9); render (d, 1.94, &rec); up (d, 9);       // 1/32
+        setP (d, id::rollPitch, 0.5f); setP (d, id::rollFilter, 0.5f);
         setP (d, id::brumeOn, 1.0f);
-        press (d, 2);                                  // BUILD 4
+        press (d, 14);                                         // BUILD 4
         for (int i = 0; i < 8; ++i) { setP (d, id::padOpen, 0.35f + 0.08f * i); render (d, 1.0, &rec); }
-        press (d, 13);                                 // DROP
-        press (d, 5); press (d, 6);                    // impact + crash
+        press (d, 26);                                         // DROP
+        selectProgram (d, progFx); press (d, 1); press (d, 2); // impact + crash
         render (d, 0.1, &rec);
-        setP (d, id::patOn, 1.0f); setP (d, id::padChord, 5.0f / 6.0f); setP (d, id::padOn, 1.0f);
+        setP (d, id::patOn, 1.0f); setP (d, id::padChord, 5.0f / 7.0f); setP (d, id::padOn, 1.0f);
         render (d, 8.0, &rec);
         juce::File out = juce::File::getCurrentWorkingDirectory().getChildFile ("station-demo.wav");
         out.deleteFile();
@@ -172,6 +198,18 @@ int main()
         std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (out), fs, 2, 24, {}, 0));
         if (w) w->writeFromAudioSampleBuffer (rec, 0, rec.getNumSamples());
         std::printf ("demo                 : %s (%.1f s)\n", out.getFullPathName().toRawUTF8(), rec.getNumSamples() / fs);
+
+        // the snare alone, for listening
+        StationProcessor s;
+        s.prepareToPlay (fs, bs);
+        juce::AudioBuffer<float> sn (2, 0);
+        selectProgram (s, progRoll);
+        for (int i = 0; i < 4; ++i) { press (s, 1); render (s, 0.484, &sn); }
+        down (s, 8); render (s, 1.94, &sn); up (s, 8); render (s, 1.0, &sn);
+        juce::File out2 = juce::File::getCurrentWorkingDirectory().getChildFile ("station-snare.wav");
+        out2.deleteFile();
+        std::unique_ptr<juce::AudioFormatWriter> w2 (wav.createWriterFor (new juce::FileOutputStream (out2), fs, 2, 24, {}, 0));
+        if (w2) w2->writeFromAudioSampleBuffer (sn, 0, sn.getNumSamples());
     }
     return 0;
 }
