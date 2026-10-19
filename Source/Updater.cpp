@@ -16,6 +16,20 @@ namespace
 
     juce::String fr (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
+    // "Brume" or "Brume Station": both apps ship in the same archive and update the same way
+    juce::String appName()
+    {
+       #ifdef JucePlugin_Name
+        return JucePlugin_Name;
+       #else
+        return "Brume";
+       #endif
+    }
+    juce::File updateLog()
+    {
+        return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Logs/" + appName().removeCharacters (" ") + "-update.log");
+    }
+
     // "v1.0.12" -> comparable number
     juce::int64 versionNumber (juce::String v)
     {
@@ -61,7 +75,7 @@ void Updater::checkInBackground()
 {
     if (! isSupported() || isThreadRunning()) return;
 
-    auto log = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Logs/Brume-update.log");
+    auto log = updateLog();
     if (log.existsAsFile())
     {
         const auto text = log.loadFileAsString();
@@ -70,7 +84,7 @@ void Updater::checkInBackground()
         {
             Status st;
             st.state = Status::State::failed;
-            st.message = fr ("macOS a bloqué le remplacement : glisse la nouvelle Brume.app (ouverte dans le Finder) dans Applications.");
+            st.message = fr ("macOS a bloqué le remplacement : glisse la nouvelle ") + appName() + fr (".app (ouverte dans le Finder) dans Applications.");
             post (st);
             return;
         }
@@ -216,7 +230,7 @@ bool Updater::downloadAndInstall()
     if (! unzip.start (juce::StringArray { "/usr/bin/ditto", "-x", "-k", zip.getFullPathName(), tmp.getFullPathName() }))
         return false;
     unzip.waitForProcessToFinish (60000);
-    auto newApp = tmp.getChildFile ("Brume").getChildFile ("Brume.app");
+    auto newApp = tmp.getChildFile ("Brume").getChildFile (appName() + ".app");
     if (! newApp.isDirectory()) return false;
 
     // 4) install while Brume is still running (macOS may kill helper processes when the app quits):
@@ -230,15 +244,19 @@ bool Updater::downloadAndInstall()
            << "exec 2>&1\n"
            << "set -x\n"
            << "P=\"$HOME/Library/Audio/Plug-Ins\"\n"
+           << "SRC=" << q (src) << "\n"
            << "mkdir -p \"$P/VST3\" \"$P/Components\"\n"
-           << "rm -rf \"$P/VST3/Brume.vst3\"; /usr/bin/ditto " << q (src.getChildFile ("Brume.vst3")) << " \"$P/VST3/Brume.vst3\"\n"
-           << "rm -rf \"$P/Components/Brume.component\"; /usr/bin/ditto " << q (src.getChildFile ("Brume.component")) << " \"$P/Components/Brume.component\"\n"
-           << "/usr/bin/xattr -dr com.apple.quarantine \"$P/VST3/Brume.vst3\" \"$P/Components/Brume.component\"\n"
+           // every plugin of the archive (Brume, Brume Station)
+           << "for f in \"$SRC\"/*.vst3; do [ -e \"$f\" ] || continue; n=$(basename \"$f\"); rm -rf \"$P/VST3/$n\"; /usr/bin/ditto \"$f\" \"$P/VST3/$n\"; /usr/bin/xattr -dr com.apple.quarantine \"$P/VST3/$n\"; done\n"
+           << "for f in \"$SRC\"/*.component; do [ -e \"$f\" ] || continue; n=$(basename \"$f\"); rm -rf \"$P/Components/$n\"; /usr/bin/ditto \"$f\" \"$P/Components/$n\"; /usr/bin/xattr -dr com.apple.quarantine \"$P/Components/$n\"; done\n"
            << "APP=" << q (app) << "\n"
            << "rm -rf \"$APP.new\"\n"
            << "if /usr/bin/ditto " << q (newApp) << " \"$APP.new\" && rm -rf \"$APP\" && mv \"$APP.new\" \"$APP\"; then\n"
            << "  /usr/bin/xattr -dr com.apple.quarantine \"$APP\"\n"
            << "  echo UPDATE_OK\n"
+           // also refresh the other app of the archive if it sits next to this one
+           << "  DIR=$(dirname \"$APP\")\n"
+           << "  for a in \"$SRC\"/*.app; do n=$(basename \"$a\"); [ \"$DIR/$n\" = \"$APP\" ] && continue; if [ -d \"$DIR/$n\" ]; then rm -rf \"$DIR/$n.new\"; /usr/bin/ditto \"$a\" \"$DIR/$n.new\" && rm -rf \"$DIR/$n\" && mv \"$DIR/$n.new\" \"$DIR/$n\" && /usr/bin/xattr -dr com.apple.quarantine \"$DIR/$n\"; fi; done\n"
            << "else\n"
            << "  echo UPDATE_FAILED\n"
            << "  rm -rf \"$APP.new\"\n"
@@ -254,7 +272,7 @@ bool Updater::downloadAndInstall()
     const auto output = installer.readAllProcessOutput();
     installer.waitForProcessToFinish (120000);
 
-    auto log = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Logs/Brume-update.log");
+    auto log = updateLog();
     log.getParentDirectory().createDirectory();
     log.replaceWithText (juce::Time::getCurrentTime().toString (true, true) + "\n" + output.replace ("UPDATE_FAILED", "update failed"));
 
@@ -263,7 +281,7 @@ bool Updater::downloadAndInstall()
         newApp.revealToUser();   // fallback: the new app is shown in the Finder, ready to drag into Applications
         Status f;
         f.state = Status::State::failed;
-        f.message = fr ("Installation impossible : glisse la nouvelle Brume.app (ouverte dans le Finder) dans Applications. Détails : ~/Library/Logs/Brume-update.log");
+        f.message = fr ("Installation impossible : glisse la nouvelle ") + appName() + fr (".app (ouverte dans le Finder) dans Applications. Détails : ") + updateLog().getFullPathName();
         post (f);
         return true;   // handled: do not quit
     }
@@ -317,7 +335,7 @@ void UpdateBanner::paint (juce::Graphics& g)
     {
         case S::available:   text = fr ("Nouvelle version ") + status.latestVersion + fr (" disponible (vous avez v") + Updater::currentVersion() + ")"; break;
         case S::downloading: text = fr ("Téléchargement de ") + status.latestVersion + "... " + juce::String (juce::roundToInt (status.progress * 100.0f)) + " %"; break;
-        case S::installing:  text = fr ("Installation... Brume va redémarrer."); break;
+        case S::installing:  text = fr ("Installation... ") + appName() + fr (" va redémarrer."); break;
         case S::failed:      text = status.message; break;
         case S::idle:        break;
     }

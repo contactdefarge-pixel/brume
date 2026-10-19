@@ -19,6 +19,11 @@ public:
     void start();
     Status getStatus() const { return (Status) status.load(); }
 
+    // LED output (report 0x80, 81 bytes: [0x80][7-seg 1-16][buttons 17-24][16 pads x BRG 25-72][mutes 73-80]).
+    // Brume never calls this; Brume Station drives the pads, the display and the button lights.
+    static constexpr int ledReportSize = 81;
+    void setLeds (const juce::uint8* report81);
+
     static constexpr int channel = 16;
     static juce::String controlName (int type, int number);   // type 1 = CC, 2 = note
 
@@ -33,5 +38,9 @@ private:
     std::function<void (const juce::MidiMessage&)> sink;
     std::atomic<int> status { notFound };
     juce::uint32 lastButtons = 0;
+    int lastEncoder = -1;
+    juce::CriticalSection ledLock;
+    juce::uint8 ledReport[ledReportSize] {};
+    bool ledDirty = false, ledsUsed = false;
     int lastValues[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
 };

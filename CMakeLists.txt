@@ -96,6 +96,49 @@ target_link_libraries(Brume
         juce::juce_recommended_warning_flags
         BrumeAssets)
 
+# ---------------------------------------------------------------------------
+# Brume Station: the F1 performance app (Brume, snare, patterns, chord pad), same repo and release archive
+juce_add_plugin(BrumeStation
+    COMPANY_NAME "Brume Audio"
+    BUNDLE_ID "audio.brume.station"
+    PLUGIN_MANUFACTURER_CODE Brum
+    PLUGIN_CODE Brm2
+    FORMATS ${BRUME_FORMATS}
+    PRODUCT_NAME "Brume Station"
+    ICON_BIG Resources/icon-station.png
+    IS_SYNTH TRUE
+    NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD FALSE
+    VST3_CATEGORIES Instrument Generator
+    AU_MAIN_TYPE kAudioUnitType_MusicDevice)
+
+target_sources(BrumeStation PRIVATE
+    Station/StationProcessor.cpp
+    Station/StationEditor.cpp
+    Source/Updater.cpp
+    Source/F1Reader.cpp)
+brume_add_hidapi(BrumeStation)
+if(APPLE AND DEFINED ENV{BRUME_UPDATE_TOKEN} AND NOT "$ENV{BRUME_UPDATE_TOKEN}" STREQUAL "")
+    target_compile_definitions(BrumeStation PRIVATE BRUME_UPDATE_TOKEN="$ENV{BRUME_UPDATE_TOKEN}")
+endif()
+target_compile_definitions(BrumeStation PUBLIC
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0)
+target_link_libraries(BrumeStation
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+        BrumeAssets)
+
 # Offline level test (not shipped): renders noise through the processor and prints levels.
 option(BRUME_BUILD_TESTS "Build the offline level test" OFF)
 if(BRUME_BUILD_TESTS)
@@ -104,4 +147,10 @@ if(BRUME_BUILD_TESTS)
     brume_add_hidapi(BrumeTest)
     target_compile_definitions(BrumeTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(BrumeTest PRIVATE BrumeAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
+
+    juce_add_console_app(StationTest PRODUCT_NAME "StationTest")
+    target_sources(StationTest PRIVATE Tests/StationTest.cpp Station/StationProcessor.cpp Station/StationEditor.cpp Source/Updater.cpp Source/F1Reader.cpp)
+    brume_add_hidapi(StationTest)
+    target_compile_definitions(StationTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(StationTest PRIVATE BrumeAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
 endif()

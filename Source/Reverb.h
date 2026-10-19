@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 #include <array>
+#include <algorithm>
+#include <initializer_list>
 #include <vector>
 #include <cmath>
 
@@ -34,6 +36,13 @@ public:
         halfLoopSeconds = ((672 + 4453 + 1800 + 3720) + (908 + 4217 + 2656 + 3163)) * 0.5 * k / fs;
         bw = lpL = lpR = fbL = fbR = 0.0f;
         lfo = 0.0;
+    }
+
+    void clear()
+    {
+        for (auto* l : { &pre, &modApL, &dL1, &apL2, &dL2, &modApR, &dR1, &apR2, &dR2 }) std::fill (l->buf.begin(), l->buf.end(), 0.0f);
+        for (auto& l : inAp) std::fill (l.buf.begin(), l.buf.end(), 0.0f);
+        bw = lpL = lpR = fbL = fbR = 0.0f;
     }
 
     void setDecay (float g)    { decay = g; }
@@ -141,6 +150,8 @@ public:
         damp = juce::jlimit (0.05f, 0.85f, 0.95f - 0.50f * brightness);
         if (snap) { charCur = charTarget; comp = compTarget(); }
     }
+
+    void clear() { small.clear(); large.clear(); }   // instant silence, no allocation (audio thread safe)
 
     // stereo in -> stereo out (100 % wet), in place
     void process (float* left, float* right, int n)

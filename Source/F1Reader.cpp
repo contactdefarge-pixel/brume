@@ -1,4 +1,5 @@
 #include "F1Reader.h"
+#include <cstring>
 
 #if BRUME_HAS_HIDAPI
  #include "hidapi.h"
@@ -39,6 +40,7 @@ namespace
 
 juce::String F1Reader::controlName (int type, int number)
 {
+    if (type == 1 && number == 9) return "F1 ENCODER TURN";
     if (type == 1)
         return number <= 4 ? "F1 KNOB " + juce::String (number) : "F1 FADER " + juce::String (number - 4);
     if (number >= 1 && number <= 16) return "F1 PAD " + juce::String (number);
@@ -62,6 +64,15 @@ void F1Reader::start()
    #endif
 }
 
+void F1Reader::setLeds (const juce::uint8* report81)
+{
+    const juce::ScopedLock sl (ledLock);
+    if (std::memcmp (ledReport + 1, report81 + 1, ledReportSize - 1) == 0 && ledsUsed) return;
+    std::memcpy (ledReport, report81, ledReportSize);
+    ledReport[0] = 0x80;
+    ledDirty = ledsUsed = true;
+}
+
 void F1Reader::parse (const unsigned char* d, int len)
 {
     // report 0x01 = 22 bytes: [id][buttons u32][encoder][4 knobs u16][4 faders u16]; some stacks drop the id
@@ -81,6 +92,15 @@ void F1Reader::parse (const unsigned char* d, int len)
                 sink ((buttons & (1u << bit)) ? juce::MidiMessage::noteOn (channel, note, (juce::uint8) 127)
                                               : juce::MidiMessage::noteOff (channel, note));
     lastButtons = buttons;
+
+    // browse encoder (byte 5): 4-bit counter, sent as a relative CC 9 (1 = clockwise, 127 = counter-clockwise)
+    const int enc = d[5 + base] & 0x0f;
+    if (lastEncoder >= 0 && enc != lastEncoder)
+    {
+        const int delta = ((enc - lastEncoder + 24) % 16) - 8;   // -8..7
+        if (delta != 0) sink (juce::MidiMessage::controllerEvent (channel, 9, delta > 0 ? 1 : 127));
+    }
+    lastEncoder = enc;
 
     for (int k = 0; k < 8; ++k)
     {
@@ -129,13 +149,23 @@ void F1Reader::run()
 
         status = connected;
         lastButtons = 0;
+        lastEncoder = -1;
+        { const juce::ScopedLock sl (ledLock); ledDirty = ledsUsed; }   // repaint the lights after a reconnect
         for (auto& v : lastValues) v = -1;
         unsigned char buf[64];
         while (! threadShouldExit())
         {
-            const int n = hid_read_timeout (dev, buf, sizeof (buf), 100);
+            const int n = hid_read_timeout (dev, buf, sizeof (buf), 15);
             if (n < 0) break;           // unplugged
             if (n > 0) parse (buf, n);
+
+            juce::uint8 out[ledReportSize];
+            bool send = false;
+            {
+                const juce::ScopedLock sl (ledLock);
+                if (ledDirty) { std::memcpy (out, ledReport, ledReportSize); ledDirty = false; send = true; }
+            }
+            if (send) hid_write (dev, out, ledReportSize);
         }
         hid_close (dev);
         status = notFound;
