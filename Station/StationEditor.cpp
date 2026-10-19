@@ -37,8 +37,9 @@ namespace
     const char* kOnIds[4]      = { id::brumeOn, id::snareOn, id::patOn, id::padOn };
 
     // F1 geometry (base coordinates)
-    const juce::Rectangle<float> kBody { 16.0f, 16.0f, 488.0f, 956.0f };
-    constexpr int padSize = 96, padGap = 14, padX0 = 47, padY0 = 300;
+    const juce::Rectangle<float> kBody { 16.0f, 16.0f, 488.0f, 968.0f };
+    constexpr int padSize = 96, padGap = 14, padX0 = 47, padY0 = 486;
+    constexpr int rowY[3] = { 328, 380, 432 };   // middle section: 3 rows of buttons
     inline int colCentre (int c) { return padX0 + c * (padSize + padGap) + padSize / 2; }
 }
 
@@ -274,36 +275,35 @@ StationEditor::~StationEditor()
 
 void StationEditor::layoutBody()
 {
-    // row 1: SYNC QUANT CAPTURE | display | encoder
-    syncBtn.setBounds (40, 40, 64, 34);
-    quantBtn.setBounds (110, 40, 64, 34);
-    captureBtn.setBounds (180, 40, 64, 34);
-    encLeft.setBounds (392, 44, 26, 30);
-    encPush.setBounds (420, 38, 46, 42);
-    encRight.setBounds (468, 44, 26, 30);
-    // row 2: SHIFT REVERSE TYPE SIZE BROWSE
-    const int bw = 80, bg = 6, bx = 40, by = 112;
-    shiftBtn.setBounds   (bx,                 by, bw, 34);
-    reverseBtn.setBounds (bx + (bw + bg),     by, bw, 34);
-    typeBtn.setBounds    (bx + 2 * (bw + bg), by, bw, 34);
-    sizeBtn.setBounds    (bx + 3 * (bw + bg), by, bw, 34);
-    browseBtn.setBounds  (bx + 4 * (bw + bg), by, bw, 34);
-
+    // F1 top to bottom: knobs, faders, middle section, 4x4 pads, STOP buttons
     for (int c = 0; c < 4; ++c)
     {
         auto& col = cols[(size_t) c];
         const int cx = colCentre (c);
-        col.knob.setBounds (juce::Rectangle<int> (72, 72).withCentre ({ cx, 222 }));
-        col.stop.setBounds (juce::Rectangle<int> (padSize, 36).withCentre ({ cx, 762 }));
-        col.fader.setBounds (juce::Rectangle<int> (60, 120).withCentre ({ cx, 858 }));
+        col.knob.setBounds (juce::Rectangle<int> (66, 66).withCentre ({ cx, 90 }));
+        col.fader.setBounds (juce::Rectangle<int> (60, 140).withCentre ({ cx, 222 }));
+        col.stop.setBounds (juce::Rectangle<int> (padSize, 34).withCentre ({ cx, 940 }));
     }
+    // middle section (columns aligned with the pads):
+    //   SYNC    QUANT  CAPTURE | display
+    //   REVERSE TYPE   SIZE    | encoder
+    //   SHIFT                  | BROWSE
+    auto cell = [] (int c, int r) { return juce::Rectangle<int> (padX0 + c * (padSize + padGap), rowY[r], padSize, 34); };
+    syncBtn.setBounds (cell (0, 0));    quantBtn.setBounds (cell (1, 0)); captureBtn.setBounds (cell (2, 0));
+    reverseBtn.setBounds (cell (0, 1)); typeBtn.setBounds (cell (1, 1));  sizeBtn.setBounds (cell (2, 1));
+    shiftBtn.setBounds (cell (0, 2));   browseBtn.setBounds (cell (3, 2));
+    const auto enc = cell (3, 1);
+    encLeft.setBounds (enc.getX(), enc.getY() + 2, 26, 30);
+    encPush.setBounds (enc.getX() + 28, enc.getY() - 4, 40, 42);
+    encRight.setBounds (enc.getRight() - 26, enc.getY() + 2, 26, 30);
+
     for (int i = 0; i < 16; ++i)
         pads[(size_t) i]->setBounds (padX0 + (i % 4) * (padSize + padGap), padY0 + (i / 4) * (padSize + padGap), padSize, padSize);
 
     // strip under the controller: key, tempo, master
-    keyBox.setBounds (190, 996, 128, 26);
-    bpmSlider.setBounds (330, 996, 120, 26);
-    masterKnob.setBounds (458, 986, 44, 44);
+    keyBox.setBounds (190, 1000, 128, 26);
+    bpmSlider.setBounds (330, 1000, 120, 26);
+    masterKnob.setBounds (458, 990, 44, 44);
 }
 
 void StationEditor::resized()
@@ -362,27 +362,27 @@ void StationEditor::paintBody (juce::Graphics& g)
 
     // display: two digits like the F1 (key, build countdown or track) + beat dots
     {
-        const auto d = juce::Rectangle<float> (262.0f, 34.0f, 112.0f, 64.0f);
+        const auto d = juce::Rectangle<float> ((float) (padX0 + 3 * (padSize + padGap)), (float) rowY[0] - 6.0f, (float) padSize, 46.0f);
         g.setColour (juce::Colour (0xff0a0b0c));
         g.fillRoundedRectangle (d, 8.0f);
         g.setColour (red);
-        g.setFont (logoFont (28.0f, 0.06f));
-        g.drawText (proc.getDisplayText(), d.withHeight (44.0f).translated (0.0f, 4.0f), juce::Justification::centred);
+        g.setFont (logoFont (22.0f, 0.06f));
+        g.drawText (proc.getDisplayText(), d.withHeight (34.0f).translated (0.0f, 1.0f), juce::Justification::centred);
         const int beatNow = (int) proc.getBarBeat();
         for (int b = 0; b < 4; ++b)
         {
-            const auto dot = juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ d.getX() + 26.0f + 20.0f * (float) b, d.getBottom() - 11.0f });
+            const auto dot = juce::Rectangle<float> (6.0f, 6.0f).withCentre ({ d.getX() + 18.0f + 20.0f * (float) b, d.getBottom() - 7.0f });
             g.setColour (b == beatNow ? (b == 0 ? red : amber) : juce::Colour (0xff2a2d30));
             g.fillEllipse (dot);
         }
     }
     g.setColour (silk.withAlpha (0.7f));
     g.setFont (silkFont (9.0f, 0.12f));
-    g.drawText (proc.isStepMode() ? "TRACK" : "KEY", juce::Rectangle<float> (392.0f, 84.0f, 102.0f, 12.0f), juce::Justification::centred);
-    g.drawText ("TAP", browseBtn.getBounds().toFloat().translated (0.0f, 36.0f).withHeight (12.0f), juce::Justification::centred);
-    g.drawText ("SWELL", reverseBtn.getBounds().toFloat().translated (0.0f, 36.0f).withHeight (12.0f), juce::Justification::centred);
-    g.drawText (proc.isStepMode() ? "PERFORM" : "STEP EDIT", typeBtn.getBounds().toFloat().translated (0.0f, 36.0f).withHeight (12.0f), juce::Justification::centred);
-    g.drawText ("BAR 1", syncBtn.getBounds().toFloat().translated (0.0f, 36.0f).withHeight (12.0f), juce::Justification::centred);
+    g.drawText (proc.isStepMode() ? "TRACK" : "KEY", encPush.getBounds().toFloat().translated (0.0f, 42.0f).withHeight (10.0f).expanded (20.0f, 0.0f), juce::Justification::centred);
+    g.drawText ("TAP", browseBtn.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred);
+    g.drawText ("SWELL", reverseBtn.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred);
+    g.drawText (proc.isStepMode() ? "PERFORM" : "STEP EDIT", typeBtn.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred);
+    g.drawText ("BAR 1", syncBtn.getBounds().toFloat().translated (0.0f, 35.0f).withHeight (13.0f), juce::Justification::centred);
 
     // column print: name, knob function, fader function
     const bool shift = proc.isShiftHeld();
@@ -392,7 +392,7 @@ void StationEditor::paintBody (juce::Graphics& g)
         const float cx = (float) colCentre (c);
         g.setColour (silk);
         g.setFont (logoFont (11.5f, 0.12f));
-        g.drawText (kNames[c], juce::Rectangle<float> (cx - 55.0f, 166.0f, 110.0f, 16.0f), juce::Justification::centred);
+        g.drawText (kNames[c], juce::Rectangle<float> (cx - 55.0f, 34.0f, 110.0f, 16.0f), juce::Justification::centred);
         const char* kid = shift ? kAltIds[c] : kKnobIds[c];
         juce::String kv = valueOf (kid);
         if (c == 3 && ! shift)
@@ -402,10 +402,10 @@ void StationEditor::paintBody (juce::Graphics& g)
         }
         g.setFont (silkFont (10.5f, 0.08f));
         g.setColour (shift ? juce::Colour (0xffb06a00) : silk);
-        g.drawText (juce::String (shift ? kAltLabel[c] : kKnobLabel[c]) + "  " + kv, juce::Rectangle<float> (cx - 55.0f, 262.0f, 110.0f, 14.0f), juce::Justification::centred);
+        g.drawText (juce::String (shift ? kAltLabel[c] : kKnobLabel[c]) + "  " + kv, juce::Rectangle<float> (cx - 55.0f, 124.0f, 110.0f, 14.0f), juce::Justification::centred);
         g.setColour (shift ? juce::Colour (0xffb06a00) : silk);
         g.drawText (juce::String (shift ? kFaderAltLabel[c] : kFaderLabel[c]) + "  " + valueOf (shift ? kFaderAltIds[c] : kFaderIds[c]),
-                    juce::Rectangle<float> (cx - 55.0f, 924.0f, 110.0f, 14.0f), juce::Justification::centred);
+                    juce::Rectangle<float> (cx - 55.0f, 296.0f, 110.0f, 14.0f), juce::Justification::centred);
         if (proc.isArmed (c) && std::fmod (juce::Time::getMillisecondCounterHiRes() * 0.006, 1.0) < 0.5)
         {
             g.setColour (amber);
@@ -420,7 +420,7 @@ void StationEditor::paintBody (juce::Graphics& g)
 
     // strip under the controller: logo, key, tempo, master, status
     {
-        const auto plate = juce::Rectangle<float> (16.0f, 986.0f, 160.0f, 48.0f);
+        const auto plate = juce::Rectangle<float> (16.0f, 990.0f, 160.0f, 48.0f);
         g.setColour (knobCol);
         g.fillRoundedRectangle (plate, 10.0f);
         g.setColour (pointerCol);
@@ -434,10 +434,10 @@ void StationEditor::paintBody (juce::Graphics& g)
 
         g.setColour (juce::Colour (0xff9aa0a6));
         g.setFont (silkFont (8.5f, 0.12f));
-        g.drawText ("KEY", juce::Rectangle<float> (190.0f, 1024.0f, 128.0f, 12.0f), juce::Justification::centred);
+        g.drawText ("KEY", juce::Rectangle<float> (190.0f, 1028.0f, 128.0f, 12.0f), juce::Justification::centred);
         g.drawText ("TEMPO " + juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1) + " (NO SYNC)",
-                    juce::Rectangle<float> (330.0f, 1024.0f, 124.0f, 12.0f), juce::Justification::centred);
-        g.drawText ("MASTER", juce::Rectangle<float> (450.0f, 1024.0f, 60.0f, 12.0f), juce::Justification::centred);
+                    juce::Rectangle<float> (330.0f, 1028.0f, 124.0f, 12.0f), juce::Justification::centred);
+        g.drawText ("MASTER", juce::Rectangle<float> (450.0f, 1028.0f, 60.0f, 12.0f), juce::Justification::centred);
 
         const int src = proc.getSyncSource();
         juce::String sync = src == 1 ? "SYNC TRAKTOR" : src == 2 ? "SYNC HOST" : "INTERNAL";
@@ -451,12 +451,12 @@ void StationEditor::paintBody (juce::Graphics& g)
         }
         g.setFont (juce::Font (juce::FontOptions (11.5f)));
         g.setColour (amber);
-        g.drawText (sync + "  " + juce::String (proc.getBpm(), 1) + " BPM", juce::Rectangle<float> (20.0f, 1044.0f, 200.0f, 22.0f), juce::Justification::centredLeft);
+        g.drawText (sync + "  " + juce::String (proc.getBpm(), 1) + " BPM", juce::Rectangle<float> (20.0f, 1052.0f, 200.0f, 22.0f), juce::Justification::centredLeft);
         g.setColour (proc.getF1Status() == F1Reader::connected ? juce::Colour (0xff4cd964) : juce::Colour (0xffe8e6df));
-        g.drawText (f1, juce::Rectangle<float> (190.0f, 1044.0f, 140.0f, 22.0f), juce::Justification::centredLeft);
+        g.drawText (f1, juce::Rectangle<float> (190.0f, 1052.0f, 140.0f, 22.0f), juce::Justification::centredLeft);
         g.setColour (juce::Colour (0xff9aa0a6));
         const auto ev = proc.getLastEvent();
         g.drawText ((ev.isNotEmpty() ? ev + "   " : juce::String()) + "V" + Updater::currentVersion(),
-                    juce::Rectangle<float> (300.0f, 1044.0f, 204.0f, 22.0f), juce::Justification::centredRight);
+                    juce::Rectangle<float> (300.0f, 1052.0f, 204.0f, 22.0f), juce::Justification::centredRight);
     }
 }
