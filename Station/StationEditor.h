@@ -14,6 +14,9 @@ public:
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool over, bool down) override;
 };
 
+// The window follows the Kontrol F1 itself, top to bottom: SYNC / QUANT / CAPTURE + display + encoder,
+// SHIFT / REVERSE / TYPE / SIZE / BROWSE, 4 knobs, 4x4 pads, 4 STOP buttons, 4 faders.
+// Everything is laid out at a fixed base size and scaled with the window (resizable).
 class StationEditor : public juce::AudioProcessorEditor,
                       private juce::Timer
 {
@@ -23,9 +26,20 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    static constexpr int baseW = 520, baseH = 1080;
+
 private:
     void timerCallback() override;
     void send (const juce::MidiMessage& m) { proc.sendControl (m); }
+    void paintBody (juce::Graphics&);
+    void layoutBody();
+
+    struct Body : public juce::Component
+    {
+        StationEditor& ed;
+        explicit Body (StationEditor& e) : ed (e) {}
+        void paint (juce::Graphics& g) override { ed.paintBody (g); }
+    };
 
     struct Pad : public juce::Component
     {
@@ -38,27 +52,26 @@ private:
 
     struct Column
     {
-        juce::Slider knob, alt, fader;
-        juce::TextButton mute;
-        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> knobAtt, altAtt, faderAtt;
-        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAtt;
-        juce::String name, knobLabel, altLabel, faderLabel;
-        const char* knobId; const char* altId; const char* faderId;
+        juce::Slider knob, fader;
+        juce::TextButton stop;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> knobAtt, faderAtt;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> stopAtt;
     };
 
     StationProcessor& proc;
     StationLookAndFeel lnf;
+    Body body { *this };
     std::array<Column, 4> cols;
     std::vector<std::unique_ptr<Pad>> pads;
-    juce::TextButton shiftBtn { "SHIFT" }, typeBtn { "STEP" }, quantBtn { "QUANT" }, syncBtn { "SYNC" },
-                     encLeft { "<" }, encRight { ">" }, encPush { "TRACK" };
+    juce::TextButton syncBtn { "SYNC" }, quantBtn { "QUANT" }, captureBtn { "CAPTURE" },
+                     shiftBtn { "SHIFT" }, reverseBtn { "REVERSE" }, typeBtn { "TYPE" }, sizeBtn { "SIZE" }, browseBtn { "BROWSE" },
+                     encLeft { "<" }, encRight { ">" }, encPush { "PUSH" };
     juce::ComboBox keyBox;
     juce::Slider bpmSlider, masterKnob;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> quantAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> keyAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt, masterAtt;
     UpdateBanner updateBanner;
-    juce::String statusLeft, statusRight;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StationEditor)
 };
