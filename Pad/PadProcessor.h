@@ -11,10 +11,10 @@
  #include <ableton/Link.hpp>
 #endif
 
-// Brume Pad: an Akai LPD8 (MK2) turned into an RMX-1000 style performance box.
+// Hydra (ex Hydra): an Akai LPD8 (MK2) turned into an RMX-1000 style performance box.
 //   Program 1 = X-PAD drums (top pads: KICK SNARE CLAP HAT, bottom pads: roll speed) + one-knob effects
 //   Program 2 = Brume (white noise voiced like the Revolo, reverb, tremolo)
-// The music from Traktor goes through (BlackHole -> Brume Pad -> speakers). KILL FX stops every effect,
+// The music from Traktor goes through (BlackHole -> Hydra -> speakers). KILL FX stops every effect,
 // leaving the echo and reverb tails to ring out.
 namespace bpad
 {
@@ -95,7 +95,7 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-    const juce::String getName() const override { return "Brume Pad"; }
+    const juce::String getName() const override { return "Hydra"; }
     bool acceptsMidi() const override  { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -226,7 +226,7 @@ private:
     juce::String lastEvent;
     double uiTime() const { return juce::Time::getMillisecondCounterHiRes() * 0.001; }
 
-    // MIDI: in the standalone app, Brume Pad opens the LPD8 and Traktor's clock port itself
+    // MIDI: in the standalone app, Hydra opens the LPD8 and Traktor's clock port itself
     juce::MidiMessageCollector queue;
     std::atomic<bool> queueReady { false };
     juce::OwnedArray<juce::MidiInput> openInputs;

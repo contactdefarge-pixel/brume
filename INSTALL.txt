@@ -51,15 +51,15 @@ Sans horloge, TEMPO et TAP reviennent en mode libre (Hz). Dans Ableton, Brume su
 Une version autonome (Brume.exe / Brume.app) est fournie pour tester sans Ableton.
 
 ================================
-BRUME PAD - Akai LPD8 MK2 façon RMX-1000 (X-PAD + effets + bruit blanc du Revolo)
+HYDRA (ex Hydra) - Akai LPD8 MK2 façon RMX-1000 (X-PAD + effets + bruit blanc du Revolo)
 ================================
-INSTALLATION (Mac) : glisser "Brume Pad.app" dans Applications, puis :
-   xattr -dr com.apple.quarantine "/Applications/Brume Pad.app"
-Pour Ableton : "Brume Pad.vst3" / "Brume Pad.component" comme pour Brume (effet avec entrée MIDI).
+INSTALLATION (Mac) : glisser "Hydra.app" dans Applications, puis :
+   xattr -dr com.apple.quarantine "/Applications/Hydra.app"
+Pour Ableton : "Hydra.vst3" / "Hydra.component" comme pour Brume (effet avec entrée MIDI).
 
 Tout le fonctionnement est expliqué dans l'app : bouton "?" (WIKI) en bas à droite.
 En bref :
-- La musique de Traktor passe dans Brume Pad : Traktor (Master sur BlackHole) -> Brume Pad (Input BlackHole,
+- La musique de Traktor passe dans Hydra : Traktor (Master sur BlackHole) -> Hydra (Input BlackHole,
   Output = ta carte son / enceintes).
 - Programme 1 (PROGRAM + PAD 1) : PAD 5-8 = KICK SNARE CLAP HAT, PAD 1-4 = roulement 1/4 1/8 1/16 1/32 (tenir),
   K1 volume batterie, K2 pitch, K3 delay court/long, K4 reverb, K5 HPF echo, K6 LPF echo, K7 crush echo, K8 bruit blanc.
@@ -73,4 +73,4 @@ COMPILER SUR LE MAC (sans GitHub Actions)
   1. Dézipper brume-src.zip (par exemple dans Téléchargements).
   2. Terminal :  bash ~/Downloads/brume-src/build-mac.sh
   La première fois : installation des outils Apple si besoin (relancer le script ensuite), puis 10 à 20 min.
-  Les fois suivantes : 1 à 3 min. Le script installe Brume et Brume Pad (apps + VST3 + AU).
+  Les fois suivantes : 1 à 3 min. Le script installe Brume et Hydra (apps + VST3 + AU).

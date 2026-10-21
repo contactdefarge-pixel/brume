@@ -1,5 +1,5 @@
 #!/bin/bash
-# Compile Brume + Brume Pad on this Mac and install them (no GitHub Actions needed).
+# Compile Brume + Hydra on this Mac and install them (no GitHub Actions needed).
 # Usage, in Terminal:  bash ~/Downloads/brume-src/build-mac.sh
 set -e
 cd "$(dirname "$0")"
@@ -29,16 +29,17 @@ echo "== 3/4 Compilation (10 à 20 min la 1re fois, ensuite 1 à 3 min)"
 cmake --build build-mac --config Release --parallel "$(sysctl -n hw.ncpu)" \
     --target Brume_VST3 Brume_AU Brume_Standalone BrumePad_VST3 BrumePad_AU BrumePad_Standalone 2>&1 \
     | grep -E "error|warning: unused|Linking|Built target" || true
-[ -d "build-mac/BrumePad_artefacts/Release/Standalone/Brume Pad.app" ] || { echo "ÉCHEC de la compilation : envoie-moi la sortie ci-dessus."; exit 1; }
+[ -d "build-mac/BrumePad_artefacts/Release/Standalone/Hydra.app" ] || { echo "ÉCHEC de la compilation : envoie-moi la sortie ci-dessus."; exit 1; }
 
 echo "== 4/4 Installation"
-osascript -e 'quit app "Brume Pad"' -e 'quit app "Brume"' 2>/dev/null || true
+osascript -e 'quit app "Hydra"' -e 'quit app "Brume"' 2>/dev/null || true
 sleep 1
 P="$HOME/Library/Audio/Plug-Ins"
 mkdir -p "$P/VST3" "$P/Components"
-for name in "Brume" "Brume Pad"; do
-    t="${name// /}"
+for name in "Brume" "Hydra"; do
+    t="$name"; [ "$name" = "Hydra" ] && t="BrumePad"
     A="build-mac/${t}_artefacts/Release"
+    rm -rf "$P/VST3/Brume Pad.vst3" "$P/Components/Brume Pad.component" "/Applications/Brume Pad.app"
     rm -rf "$P/VST3/$name.vst3" "$P/Components/$name.component" "/Applications/$name.app"
     ditto "$A/VST3/$name.vst3" "$P/VST3/$name.vst3"
     ditto "$A/AU/$name.component" "$P/Components/$name.component"
@@ -48,5 +49,5 @@ for name in "Brume" "Brume Pad"; do
     echo "   $name installé (app + VST3 + AU)"
 done
 killall -9 AudioComponentRegistrar 2>/dev/null || true   # Traktor / Ableton revoient les AU tout de suite
-echo "Terminé. Lance Brume Pad depuis Applications."
-open -a "Brume Pad"
+echo "Terminé. Lance Hydra depuis Applications."
+open -a "Hydra"

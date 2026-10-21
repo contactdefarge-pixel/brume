@@ -1,7 +1,50 @@
 #include "PadProcessor.h"
 #include "PadEditor.h"
+#if JUCE_MAC
+ #include <mach-o/dyld.h>
+ #include <filesystem>
+ #include <cstdlib>
+ #include <cstring>
+#endif
 
 using namespace bpad;
+
+#if JUCE_MAC
+namespace
+{
+    // "Brume Pad" became "Hydra". Runs before the standalone app starts (so the audio settings are found):
+    // keeps the old settings (audio devices, LPD8 setup), removes the old plugin bundles (same plugin ID),
+    // and renames an app that an old updater installed as "Brume Pad.app".
+    struct HydraMigration
+    {
+        HydraMigration()
+        {
+            if (std::strcmp (getprogname(), "Hydra") != 0) return;
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            const char* home = std::getenv ("HOME");
+            if (home == nullptr) return;
+            const fs::path h (home);
+            const auto as = h / "Library" / "Application Support";
+            if (! fs::exists (as / "Hydra.settings", ec) && fs::exists (as / "Brume Pad.settings", ec))
+                fs::copy_file (as / "Brume Pad.settings", as / "Hydra.settings", ec);
+            const auto pl = h / "Library" / "Audio" / "Plug-Ins";
+            fs::remove_all (pl / "VST3" / "Brume Pad.vst3", ec);
+            fs::remove_all (pl / "Components" / "Brume Pad.component", ec);
+            char buf[4096]; uint32_t size = sizeof (buf);
+            if (_NSGetExecutablePath (buf, &size) == 0)
+            {
+                const auto bundle = fs::weakly_canonical (fs::path (buf), ec).parent_path().parent_path().parent_path();
+                if (bundle.filename() == "Brume Pad.app")
+                {
+                    const auto dst = bundle.parent_path() / "Hydra.app";
+                    if (! fs::exists (dst, ec)) fs::rename (bundle, dst, ec);
+                }
+            }
+        }
+    } hydraMigration;
+}
+#endif
 
 namespace
 {

@@ -99,15 +99,16 @@ target_link_libraries(Brume
         BrumeAssets)
 
 # ---------------------------------------------------------------------------
-# Brume Pad: an Akai LPD8 MK2 as an RMX-1000 style box (X-PAD drums + effects, Brume white noise), same release archive
+# Hydra (target BrumePad, ex "Brume Pad"): an Akai LPD8 MK2 as an all-in-one box (X-PAD, send FX, white noise, step sequencer), same release archive
 juce_add_plugin(BrumePad
     COMPANY_NAME "Brume Audio"
     BUNDLE_ID "audio.brume.pad"
     PLUGIN_MANUFACTURER_CODE Brum
     PLUGIN_CODE Brm3
     FORMATS ${BRUME_FORMATS}
-    PRODUCT_NAME "Brume Pad"
-    ICON_BIG Resources/icon-pad.png
+    PRODUCT_NAME "Hydra"
+    PLUGIN_NAME "Hydra"
+    ICON_BIG Resources/icon-hydra.png
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
@@ -117,8 +118,8 @@ juce_add_plugin(BrumePad
     VST3_CATEGORIES Fx
     AU_MAIN_TYPE kAudioUnitType_MusicEffect
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "Brume Pad a besoin de l'entree audio pour traiter le son de Traktor (BlackHole)."
-    PLIST_TO_MERGE "<plist><dict><key>NSLocalNetworkUsageDescription</key><string>Brume Pad utilise Ableton Link pour suivre le tempo de Traktor.</string></dict></plist>")
+    MICROPHONE_PERMISSION_TEXT "Hydra a besoin de l'entree audio pour traiter le son de Traktor (BlackHole)."
+    PLIST_TO_MERGE "<plist><dict><key>NSLocalNetworkUsageDescription</key><string>Hydra utilise Ableton Link pour suivre le tempo de Traktor.</string></dict></plist>")
 
 target_sources(BrumePad PRIVATE
     Pad/PadProcessor.cpp

@@ -82,19 +82,19 @@ namespace
         {
             case 0: return u (
 "LE PRINCIPE\n\n"
-"Brume Pad transforme un Akai LPD8 MK2 en boîte d'effets façon RMX-1000 / DJM-V10 pour Traktor.\n\n"
-"- La musique de Traktor passe dans Brume Pad (Traktor -> BlackHole -> Brume Pad -> enceintes) : les échos, filtres "
+"Hydra transforme un Akai LPD8 MK2 en boîte d'effets façon RMX-1000 / DJM-V10 pour Traktor.\n\n"
+"- La musique de Traktor passe dans Hydra (Traktor -> BlackHole -> Hydra -> enceintes) : les échos, filtres "
 "et réverbes s'appliquent au morceau, comme un RMX-1000 branché entre la table et les enceintes.\n"
 "- Le LPD8 a 4 PROGRAMMES. Sur le contrôleur : maintenir PROGRAM et appuyer sur PAD 1, 2, 3 ou 4.\n"
 "     Programme 1 = X-PAD (kick, snare, clap, hi-hat en roulements) + effets Send du DJM-V10\n"
-"     Programme 2 = BRUME (bruit blanc du Revolo, réverbe, trémolo)\n"
+"     Programme 2 = WHITE NOISE (bruit blanc façon Revolo, réverbe, trémolo)\n"
 "     Programme 3 = PATTERN PLAYER (boîte à rythme 16 pas, comme dans Traktor)\n"
-"  Brume Pad reconnaît tout seul le programme utilisé (après le SETUP LPD8) et l'écran change ses étiquettes.\n"
+"  Hydra reconnaît tout seul le programme utilisé (après le SETUP LPD8) et l'écran change ses étiquettes.\n"
 "- À l'écran : cliquer sur PROGRAM puis sur un des pads 1 à 4, ou utiliser les pads et boutons à la souris.\n"
 "- Tout est calé sur le tempo de Traktor grâce à l'horloge MIDI (onglet SYNCHRO).\n"
 "- KILL FX coupe tous les effets d'un coup en laissant les queues d'écho et de réverbe s'éteindre.\n"
 "- Le commutateur FX (sous les boutons de gauche) :\n"
-"     FX : MUSIQUE + SONS = les effets (delays, dub echo, réverbe, Brume, DUCK) s'appliquent au morceau ET aux sons de Brume Pad.\n"
+"     FX : MUSIQUE + SONS = les effets (delays, dub echo, réverbe, white noise, DUCK) s'appliquent au morceau ET aux sons d'Hydra.\n"
 "     FX : SONS SEULS = le morceau passe intact ; seuls les roulements, le bruit blanc et le pattern sont joués et traités par les effets.");
             case 1: return u (
 "PROGRAMME 1 - X-PAD + EFFETS\n\n"
@@ -120,16 +120,16 @@ namespace
 "EXEMPLE DE DROP : SNARE (le roulement part en 1/4), puis 1/8, 1/16, 1/32 en montant K1 et K2 ; au drop, "
 "ré-appuyer sur SNARE (ou baisser K1).");
             case 2: return u (
-"PROGRAMME 2 - BRUME\n\n"
+"PROGRAMME 2 - WHITE NOISE\n\n"
 "Le bruit blanc est voicé comme le Teile Revolo (mesuré sur tes vidéos : bruit large de 170 Hz à 10 kHz, "
 "gauche et droite indépendants, qui s'épaissit dans la réverbe).\n\n"
 "PADS\n"
-"   PAD 5 ON / OFF : allume / éteint Brume (la queue s'éteint selon LENGTH)\n"
+"   PAD 5 ON / OFF : allume / éteint le bruit blanc (la queue s'éteint selon LENGTH)\n"
 "   PAD 6 TAP : taper la vitesse du trémolo (en rythme avec la musique)\n"
 "   PAD 7 TREM ON : trémolo marche / arrêt\n"
-"   PAD 8 HOLD : Brume allumé tant qu'on appuie\n"
+"   PAD 8 HOLD : bruit blanc allumé tant qu'on appuie\n"
 "   PADS 1 à 4 (rangée du bas) : inactifs dans ce programme. La vitesse du trémolo se règle en Hz avec K7 TEMPO.\n\n"
-"BOUTONS (comme la pédale Brume)\n"
+"BOUTONS\n"
 "   K1 REVERB (quantité de musique envoyée dans la réverbe) · K2 CHARACTER · K3 LENGTH · K4 AIR\n"
 "   K5 NOISE (volume du bruit) · K6 TREMOLO · K7 TEMPO (vitesse du trémolo en Hz, sans palier ni coupure) · K8 FILTER\n\n"
 "Baisser NOISE fait comme OFF : le bruit s'efface au rythme de la queue de réverbe (réglée par LENGTH).");
@@ -156,11 +156,11 @@ namespace
 "ASTUCE : choisir CL HAT + PATTERN 2 (contretemps) pour ajouter un charley sur un morceau, ou CLAP + PATTERN 3 avant un drop.");
             case 4: return u (
 "KILL FX\n\n"
-"Coupe tout d'un coup : short delay, long delay, dub echo, réverbe, Brume (bruit blanc), et remet tous les pads à zéro : X-PAD (son et vitesse éteints), Brume (ON et TREM ON éteints), Pattern Player (tous les pas éteints ; ré-appuyer sur des pas ou tourner K7 PATTERN pour repartir). Les échos et réverbes "
+"Coupe tout d'un coup : short delay, long delay, dub echo, réverbe, white noise, et remet tous les pads à zéro : X-PAD (son et vitesse éteints), White noise (ON et TREM ON éteints), Pattern Player (tous les pas éteints ; ré-appuyer sur des pas ou tourner K7 PATTERN pour repartir). Les échos et réverbes "
 "gardent leur queue (le feedback est réduit pour qu'elle s'éteigne), rien ne s'arrête brutalement.\n\n"
 "TROIS FAÇONS DE LE DÉCLENCHER\n"
 "   1. Sur le LPD8 : appuyer sur CC puis sur n'importe quel pad (en mode CC les pads envoient des messages CC, "
-"que Brume Pad interprète comme KILL FX). Appuyer ensuite sur NOTE pour revenir aux pads normaux.\n"
+"que Hydra interprète comme KILL FX). Appuyer ensuite sur NOTE pour revenir aux pads normaux.\n"
 "   2. Sur le LPD8 : appuyer en même temps sur PAD 5 et PAD 8.\n"
 "   3. À l'écran : le bouton CC (KILL FX).\n\n"
 "Le bouton CC seul n'envoie rien (c'est un changement de mode du contrôleur), d'où la combinaison CC + pad.\n\n"
@@ -168,33 +168,33 @@ namespace
             case 5: return u (
 "SETUP LPD8 (une seule fois)\n\n"
 "Chaque programme du LPD8 envoie ses propres numéros de notes et de boutons. Le SETUP les apprend, ensuite "
-"Brume Pad sait toujours sur quel programme tu es.\n\n"
+"Hydra sait toujours sur quel programme tu es.\n\n"
 "   1. Cliquer sur SETUP LPD8.\n"
 "   2. Sur le LPD8 : PROGRAM + PAD 1 (programme 1), puis appuyer sur PAD 1, puis tourner K1.\n"
 "   3. PROGRAM + PAD 2 (programme 2), puis appuyer sur PAD 1, puis tourner K1.\n"
 "   4. PROGRAM + PAD 3 (programme 3), puis appuyer sur PAD 1, puis tourner K1, puis PROG CHNG et PAD 1 "
 "(pour que les pas 9 à 16 tombent sur les bons pads), puis revenir en NOTE.\n"
 "C'est tout. Le LPD8 doit être en mode NOTE (bouton NOTE).\n\n"
-"Sans SETUP, Brume Pad fonctionne quand même avec les réglages d'usine du LPD8 MK2, et le programme se choisit à l'écran.\n\n"
+"Sans SETUP, Hydra fonctionne quand même avec les réglages d'usine du LPD8 MK2, et le programme se choisit à l'écran.\n\n"
 "Le LPD8 et le port d'horloge de Traktor sont ouverts automatiquement par l'app (rien à cocher).");
             default: return u (
 "SYNCHRO TRAKTOR\n"
-"   LE PLUS SIMPLE : ABLETON LINK. Dans Traktor, appuyer sur LINK (en haut de l'écran). C'est tout : Brume Pad "
-"rejoint la session Link tout seul (en bas : SYNC LINK et LINK 1 PEER). Le Mac peut demander d'autoriser Brume Pad "
+"   LE PLUS SIMPLE : ABLETON LINK. Dans Traktor, appuyer sur LINK (en haut de l'écran). C'est tout : Hydra "
+"rejoint la session Link tout seul (en bas : SYNC LINK et LINK 1 PEER). Le Mac peut demander d'autoriser Hydra "
 "sur le réseau local : accepter.\n\n"
 "   OU L'HORLOGE MIDI :\n"
 "   1. Traktor > Préférences > Controller Manager > Add... > Generic MIDI, Out-Port : Traktor Virtual Output.\n"
 "   2. Traktor > Préférences > External Sync : cocher Enable MIDI Clock.\n"
 "   3. Dans Traktor, panneau Master Clock (métronome) : lancer l'horloge.\n"
-"   Brume Pad ouvre Traktor Virtual Output tout seul. En bas : SYNC MIDI CLOCK et le tempo.\n\n"
+"   Hydra ouvre Traktor Virtual Output tout seul. En bas : SYNC MIDI CLOCK et le tempo.\n\n"
 "   CALAGE FIN : si les roulements arrivent un peu avant ou après le temps de la musique, régler SYNC OFFSET "
 "en bas (+ = roulements plus tard, - = plus tôt ; double-clic = 0). Ne pas décaler le morceau dans Traktor.\n\n"
-"SON (la musique passe dans Brume Pad)\n"
+"SON (la musique passe dans Hydra)\n"
 "   - Traktor > Préférences > Audio Setup : un périphérique agrégé (carte son ou enceintes du Mac + BlackHole 2ch), "
 "Output Routing : Master sur les canaux de BlackHole (les casques restent sur ta carte son).\n"
-"   - Brume Pad > Options > Audio/MIDI Settings : Input = BlackHole 2ch, Output = ta carte son ou les enceintes, "
+"   - Hydra > Options > Audio/MIDI Settings : Input = BlackHole 2ch, Output = ta carte son ou les enceintes, "
 "même fréquence (44100 Hz) que Traktor.\n"
-"   - Autoriser le micro pour Brume Pad (Réglages Système > Confidentialité > Microphone) sinon l'entrée reste muette.");
+"   - Autoriser le micro pour Hydra (Réglages Système > Confidentialité > Microphone) sinon l'entrée reste muette.");
         }
     }
 }
@@ -298,7 +298,7 @@ void PadEditor::Help::paint (juce::Graphics& g)
     g.fillAll (juce::Colour (0xf4111316));
     g.setColour (orange);
     g.setFont (logoFont (15.0f, 0.15f));
-    g.drawText ("WIKI BRUME PAD", getLocalBounds().removeFromTop (44).reduced (14, 0), juce::Justification::centredLeft);
+    g.drawText ("WIKI HYDRA", getLocalBounds().removeFromTop (44).reduced (14, 0), juce::Justification::centredLeft);
 }
 
 void PadEditor::Help::resized()
@@ -503,16 +503,16 @@ void PadEditor::paintBody (juce::Graphics& g)
     g.setColour (juce::Colours::white.withAlpha (0.04f));
     g.fillRect (top.withHeight (1.5f));
 
-    // logo block (Brume's own print, no third-party brand)
+    // logo block (own print, no third-party brand)
     g.setColour (print);
     g.setFont (logoFont (26.0f, 0.12f));
-    g.drawText ("BRUME", juce::Rectangle<float> (44.0f, 52.0f, 200.0f, 34.0f), juce::Justification::centredLeft);
+    g.setFont (logoFont (40.0f, 0.10f));
+    g.drawText ("HYDRA", juce::Rectangle<float> (42.0f, 56.0f, 210.0f, 50.0f), juce::Justification::centredLeft);
     g.setColour (trim.brighter (0.2f));
-    g.setFont (logoFont (30.0f, 0.06f));
-    g.drawText ("PAD", juce::Rectangle<float> (44.0f, 88.0f, 200.0f, 36.0f), juce::Justification::centredLeft);
+    g.fillRect (44.0f, 110.0f, 176.0f, 2.0f);
     g.setColour (printDim);
-    g.setFont (labelFont (9.5f, true, 0.18f));
-    g.drawText ("X-PAD  -  FX  -  WHITE NOISE", juce::Rectangle<float> (44.0f, 126.0f, 210.0f, 14.0f), juce::Justification::centredLeft);
+    g.setFont (labelFont (9.0f, true, 0.16f));
+    g.drawText ("X-PAD  -  FX  -  NOISE  -  STEPS", juce::Rectangle<float> (44.0f, 126.0f, 210.0f, 14.0f), juce::Justification::centredLeft);
 
     // program indicator (what the pads and knobs control now)
     {
@@ -524,7 +524,7 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.drawText ("PROGRAM " + juce::String (prog + 1), pr.withHeight (24.0f).translated (0.0f, 2.0f), juce::Justification::centred);
         g.setColour (print);
         g.setFont (labelFont (11.0f));
-        static const char* names[] = { "X-PAD + FX", "BRUME", "PATTERN PLAYER", "(EMPTY)" };
+        static const char* names[] = { "X-PAD + FX", "WHITE NOISE", "PATTERN PLAYER", "(EMPTY)" };
         g.drawText (names[juce::jlimit (0, 3, prog)], pr.withTrimmedTop (22.0f), juce::Justification::centred);
     }
     g.setColour (printDim);

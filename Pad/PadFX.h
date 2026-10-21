@@ -7,7 +7,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "BinaryData.h"
 
-// Effects of Brume Pad (program 1), each driven by ONE knob: 0 = off, turning up = more effect.
+// Effects of Hydra (program 1), each driven by ONE knob: 0 = off, turning up = more effect.
 namespace pad
 {
 using station::Svf;
