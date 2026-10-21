@@ -62,9 +62,10 @@ private:
     std::vector<std::unique_ptr<PadButton>> pads;
     std::array<juce::Slider, 8> knobs;
     juce::TextButton progBtn { "PROGRAM" }, noteBtn { "NOTE" }, pcBtn { "PROG CHNG" }, ccBtn { "CC" },
-                     setupBtn { "SETUP LPD8" }, helpBtn { "?" };
+                     setupBtn { "SETUP LPD8" }, helpBtn { "?" }, targetBtn { "FX : MUSIQUE + SONS" };
     juce::Slider bpmSlider, masterKnob, offsetSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt, masterAtt, offsetAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> targetAtt;
     UpdateBanner updateBanner;
     Help help;
     bool programSelectMode = false;

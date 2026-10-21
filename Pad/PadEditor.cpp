@@ -55,17 +55,22 @@ namespace
         {
             switch (pad)
             {
-                case 0: return p.isBrumeOn() ? juce::Colour (0xffff2020) : juce::Colour (0xff400808);
-                case 1: return onBeat ? juce::Colour (0xff40ff60) : juce::Colour (0xff0c3014);
-                case 2: return p.getKnobValue (1, 5) > 0.05f ? juce::Colour (0xffb050ff) : juce::Colour (0xff2a1040);
-                case 3: return down ? juce::Colours::white : juce::Colour (0xff383838);
-                default:
-                {
-                    static const int div[] = { 2, 4, 6, 8 };
-                    const bool sel = juce::roundToInt (p.getKnobValue (1, 6) * 9.0f) == div[pad - 4] && p.getKnobValue (1, 5) > 0.05f;
-                    return sel ? juce::Colour (0xff40e0ff) : juce::Colour (0xff0a2a34);
-                }
+                case 4: return p.isBrumeOn() ? juce::Colour (0xffff2020) : juce::Colour (0xff400808);
+                case 5: return onBeat ? juce::Colour (0xff40ff60) : juce::Colour (0xff0c3014);
+                case 6: return p.getKnobValue (1, 5) > 0.05f ? juce::Colour (0xffb050ff) : juce::Colour (0xff2a1040);
+                case 7: return down ? juce::Colours::white : juce::Colour (0xff383838);
+                default: return juce::Colour (0xff141414);   // bottom row unused in this program
             }
+        }
+        if (prog == 2)
+        {
+            const int step = p.getPatternPage() * 8 + pad;
+            const bool on = (p.getPatternSteps() >> step) & 1;
+            const bool here = p.getPatternPlayStep() == step;
+            if (here) return on ? juce::Colours::white : juce::Colour (0xff606060);
+            const bool beatStart = step % 4 == 0;
+            return on ? (beatStart ? juce::Colour (0xffff3a3a) : juce::Colour (0xffff8a1f))
+                      : (beatStart ? juce::Colour (0xff3a1010) : juce::Colour (0xff2a1a08));
         }
         return juce::Colour (0xff202020);
     }
@@ -83,10 +88,14 @@ namespace
 "- Le LPD8 a 4 PROGRAMMES. Sur le contrôleur : maintenir PROGRAM et appuyer sur PAD 1, 2, 3 ou 4.\n"
 "     Programme 1 = X-PAD (kick, snare, clap, hi-hat en roulements) + effets Send du DJM-V10\n"
 "     Programme 2 = BRUME (bruit blanc du Revolo, réverbe, trémolo)\n"
+"     Programme 3 = PATTERN PLAYER (boîte à rythme 16 pas, comme dans Traktor)\n"
 "  Brume Pad reconnaît tout seul le programme utilisé (après le SETUP LPD8) et l'écran change ses étiquettes.\n"
 "- À l'écran : cliquer sur PROGRAM puis sur un des pads 1 à 4, ou utiliser les pads et boutons à la souris.\n"
 "- Tout est calé sur le tempo de Traktor grâce à l'horloge MIDI (onglet SYNCHRO).\n"
-"- KILL FX coupe tous les effets d'un coup en laissant les queues d'écho et de réverbe s'éteindre.");
+"- KILL FX coupe tous les effets d'un coup en laissant les queues d'écho et de réverbe s'éteindre.\n"
+"- Le commutateur FX (sous les boutons de gauche) :\n"
+"     FX : MUSIQUE + SONS = les effets (delays, dub echo, réverbe, Brume, DUCK) s'appliquent au morceau ET aux sons de Brume Pad.\n"
+"     FX : SONS SEULS = le morceau passe intact ; seuls les roulements, le bruit blanc et le pattern sont joués et traités par les effets.");
             case 1: return u (
 "PROGRAMME 1 - X-PAD + EFFETS\n\n"
 "PADS DU HAUT (PAD 5 à 8) : KICK, SNARE, CLAP, HAT. Un appui lance le roulement, un deuxième appui l'arrête. "
@@ -115,16 +124,36 @@ namespace
 "Le bruit blanc est voicé comme le Teile Revolo (mesuré sur tes vidéos : bruit large de 170 Hz à 10 kHz, "
 "gauche et droite indépendants, qui s'épaissit dans la réverbe).\n\n"
 "PADS\n"
-"   PAD 1 ON / OFF : allume / éteint Brume (la queue s'éteint selon LENGTH)\n"
-"   PAD 2 TAP : taper le tempo du trémolo (sans synchro)\n"
-"   PAD 3 TREM ON : trémolo marche / arrêt\n"
-"   PAD 4 HOLD : Brume allumé tant qu'on appuie\n"
-"   PAD 5 à 8 : trémolo à 1/4, 1/8, 1/16, 1/32 du tempo\n\n"
+"   PAD 5 ON / OFF : allume / éteint Brume (la queue s'éteint selon LENGTH)\n"
+"   PAD 6 TAP : taper le tempo du trémolo (sans synchro)\n"
+"   PAD 7 TREM ON : trémolo marche / arrêt\n"
+"   PAD 8 HOLD : Brume allumé tant qu'on appuie\n"
+"   PADS 1 à 4 (rangée du bas) : inactifs dans ce programme. La division du trémolo se règle avec K7 TEMPO.\n\n"
 "BOUTONS (comme la pédale Brume)\n"
 "   K1 REVERB (quantité de musique envoyée dans la réverbe) · K2 CHARACTER · K3 LENGTH · K4 AIR\n"
 "   K5 NOISE (volume du bruit) · K6 TREMOLO · K7 TEMPO (division quand c'est synchronisé) · K8 FILTER\n\n"
 "Baisser NOISE fait comme OFF : le bruit s'efface au rythme de la queue de réverbe (réglée par LENGTH).");
             case 3: return u (
+"PROGRAMME 3 - PATTERN PLAYER\n\n"
+"Une boîte à rythme de 16 pas (une mesure en doubles-croches), calée sur le tempo et qui repart toujours sur le 1er temps, "
+"comme le Pattern Player de Traktor.\n\n"
+"LES 16 PAS AVEC 8 PADS\n"
+"   Mode NOTE (bouton NOTE du LPD8) : les pads sont les pas 1 à 8 (1re moitié de la mesure).\n"
+"   Mode PROG CHNG (bouton PROG CHNG du LPD8) : les mêmes pads sont les pas 9 à 16.\n"
+"   Un appui allume / éteint le pas. Le pas en cours de lecture clignote en blanc ; les pas rouges tombent sur les temps.\n"
+"   À l'écran : NOTE / PROG CHNG choisissent la moitié affichée, puis cliquer sur les pads.\n\n"
+"BOUTONS\n"
+"   K1 VOLUME : à zéro, rien ne joue. C'est le bouton pour lancer / couper le pattern.\n"
+"   K2 PITCH : hauteur du son (-12 à +12).\n"
+"   K3 DECAY : longueur du son (court = sec, à fond = son entier).\n"
+"   K4 DUCK : baisse la musique à chaque coup (effet pompe). Seulement en mode FX : MUSIQUE + SONS.\n"
+"   K5 KIT : 808, 909 ou RMX (les sons extraits de ton RMX-1000).\n"
+"   K6 SOUND : KICK, SNARE, CLAP, CL HAT, OP HAT, RIM, TOM, CYMBAL.\n"
+"   K7 PATTERN : 8 patterns de départ (4 temps, contretemps, backbeat, croches, doubles, syncopé, shuffle, fill). "
+"Tourner K7 charge le pattern ; tes modifications de pas restent tant que tu ne le tournes pas.\n"
+"   K8 SWING : retarde les pas pairs (groove shuffle).\n\n"
+"ASTUCE : choisir CL HAT + PATTERN 2 (contretemps) pour ajouter un charley sur un morceau, ou CLAP + PATTERN 3 avant un drop.");
+            case 4: return u (
 "KILL FX\n\n"
 "Coupe tous les effets d'un coup : short delay, long delay, dub echo, réverbe, et Brume. Les échos et réverbes "
 "gardent leur queue (le feedback est réduit pour qu'elle s'éteigne), rien ne s'arrête brutalement.\n\n"
@@ -135,13 +164,14 @@ namespace
 "   3. À l'écran : le bouton CC (KILL FX).\n\n"
 "Le bouton CC seul n'envoie rien (c'est un changement de mode du contrôleur), d'où la combinaison CC + pad.\n\n"
 "Après un KILL, un effet reste coupé même si son bouton est encore tourné : il revient dès que tu bouges ce bouton.");
-            case 4: return u (
+            case 5: return u (
 "SETUP LPD8 (une seule fois)\n\n"
 "Chaque programme du LPD8 envoie ses propres numéros de notes et de boutons. Le SETUP les apprend, ensuite "
 "Brume Pad sait toujours sur quel programme tu es.\n\n"
 "   1. Cliquer sur SETUP LPD8.\n"
 "   2. Sur le LPD8 : PROGRAM + PAD 1 (programme 1), puis appuyer sur PAD 1, puis tourner K1.\n"
 "   3. PROGRAM + PAD 2 (programme 2), puis appuyer sur PAD 1, puis tourner K1.\n"
+"   4. PROGRAM + PAD 3 (programme 3), puis appuyer sur PAD 1, puis tourner K1.\n"
 "C'est tout. Le LPD8 doit être en mode NOTE (bouton NOTE).\n\n"
 "Sans SETUP, Brume Pad fonctionne quand même avec les réglages d'usine du LPD8 MK2, et le programme se choisit à l'écran.\n\n"
 "Le LPD8 et le port d'horloge de Traktor sont ouverts automatiquement par l'app (rien à cocher).");
@@ -234,8 +264,8 @@ void PadLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, boo
 //==============================================================================
 PadEditor::Help::Help()
 {
-    static const char* names[] = { "PRINCIPE", "PROGRAMME 1", "PROGRAMME 2", "KILL FX", "SETUP LPD8", "SYNCHRO & SON" };
-    for (int i = 0; i < 6; ++i)
+    static const char* names[] = { "PRINCIPE", "PROGRAMME 1", "PROGRAMME 2", "PROGRAMME 3", "KILL FX", "SETUP LPD8", "SYNCHRO & SON" };
+    for (int i = 0; i < 7; ++i)
     {
         auto* b = tabs.add (new juce::TextButton (names[i]));
         b->onClick = [this, i] { show (i); };
@@ -302,7 +332,9 @@ void PadEditor::PadButton::paint (juce::Graphics& g)
 
     g.setColour (print);
     g.setFont (labelFont (12.5f));
-    juce::String label = ed.programSelectMode && index < 4 ? "PROGRAM " + juce::String (index + 1) : juce::String (padLabel (prog, index));
+    juce::String label = ed.programSelectMode && index < 4 ? "PROGRAM " + juce::String (index + 1)
+                       : prog == 2 ? "STEP " + juce::String (ed.proc.getPatternPage() * 8 + index + 1)
+                       : juce::String (padLabel (prog, index));
     g.drawFittedText (label, r.reduced (8.0f).toNearestInt(), juce::Justification::centred, 2, 0.8f);
 }
 
@@ -349,11 +381,15 @@ PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p
 
     progBtn.onClick = [this] { programSelectMode = ! programSelectMode; progBtn.setToggleState (programSelectMode, juce::dontSendNotification); };
     noteBtn.setToggleState (true, juce::dontSendNotification);
-    noteBtn.setEnabled (false);
-    pcBtn.setEnabled (false);
+    // in program 3 the NOTE / PROG CHNG buttons choose the half of the 16-step pattern (like on the LPD8)
+    noteBtn.onClick = [this] { proc.setPatternPage (0); };
+    pcBtn.onClick = [this] { proc.setPatternPage (1); };
+    targetAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, id::fxTarget, targetBtn);
+    targetBtn.setClickingTogglesState (true);
+    body.addAndMakeVisible (targetBtn);
     ccBtn.onClick = [this] { proc.killFx(); };
     setupBtn.onClick = [this] { if (proc.getLearnStep() > 0) proc.cancelLearn(); else proc.startLearn(); };
-    helpBtn.onClick = [this] { help.setBounds (getLocalBounds()); help.show (proc.getProgram() <= 1 ? 1 + proc.getProgram() : 0); };
+    helpBtn.onClick = [this] { help.setBounds (getLocalBounds()); help.show (proc.getProgram() <= 2 ? 1 + proc.getProgram() : 0); };
     for (auto* b : { &progBtn, &noteBtn, &pcBtn, &ccBtn, &setupBtn, &helpBtn }) body.addAndMakeVisible (*b);
 
     bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal);
@@ -396,6 +432,7 @@ void PadEditor::layoutBody()
     noteBtn.setBounds (136, 214, 84, 40);
     pcBtn.setBounds (44, 262, 84, 40);
     ccBtn.setBounds (136, 262, 84, 40);
+    targetBtn.setBounds (44, 314, 176, 26);
     // strip under the controller
     setupBtn.setBounds (430, 404, 110, 34);
     offsetSlider.setBounds (556, 408, 130, 24);
@@ -419,8 +456,13 @@ void PadEditor::timerCallback()
         auto& s = knobs[(size_t) k];
         if (! s.isMouseButtonDown())
             s.setValue (proc.getKnobValue (prog, k), juce::dontSendNotification);
-        s.setEnabled (prog <= 1);
+        s.setEnabled (prog <= 2);
     }
+    const bool p3 = prog == 2;
+    noteBtn.setEnabled (p3); pcBtn.setEnabled (p3);
+    noteBtn.setToggleState (! p3 || proc.getPatternPage() == 0, juce::dontSendNotification);
+    pcBtn.setToggleState (p3 && proc.getPatternPage() == 1, juce::dontSendNotification);
+    targetBtn.setButtonText (proc.isSoundsOnly() ? "FX : SONS SEULS" : "FX : MUSIQUE + SONS");
     setupBtn.setButtonText (proc.getLearnStep() > 0 ? "CANCEL SETUP" : "SETUP LPD8");
     setupBtn.setToggleState (proc.getLearnStep() > 0, juce::dontSendNotification);
     ccBtn.setToggleState (proc.getKillFlash() > 0.0f, juce::dontSendNotification);
@@ -469,7 +511,7 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.drawText ("PROGRAM " + juce::String (prog + 1), pr.withHeight (24.0f).translated (0.0f, 2.0f), juce::Justification::centred);
         g.setColour (print);
         g.setFont (labelFont (11.0f));
-        static const char* names[] = { "X-PAD + FX", "BRUME", "(EMPTY)", "(EMPTY)" };
+        static const char* names[] = { "X-PAD + FX", "BRUME", "PATTERN PLAYER", "(EMPTY)" };
         g.drawText (names[juce::jlimit (0, 3, prog)], pr.withTrimmedTop (22.0f), juce::Justification::centred);
     }
     g.setColour (printDim);
@@ -477,6 +519,12 @@ void PadEditor::paintBody (juce::Graphics& g)
     g.drawText ("+ PAD 1-4", progBtn.getBounds().toFloat().translated (0.0f, 40.0f).withHeight (11.0f), juce::Justification::centred);
     g.setColour (orange);
     g.drawText ("KILL FX", ccBtn.getBounds().toFloat().translated (0.0f, 40.0f).withHeight (11.0f), juce::Justification::centred);
+    if (prog == 2)
+    {
+        g.setColour (printDim);
+        g.drawText ("STEPS 1-8", noteBtn.getBounds().toFloat().translated (0.0f, -12.0f).withHeight (11.0f), juce::Justification::centred);
+        g.drawText ("STEPS 9-16", pcBtn.getBounds().toFloat().translated (0.0f, 40.0f).withHeight (11.0f), juce::Justification::centred);
+    }
 
     // pad print: "PAD n" above, "PROG n" in orange for pads 1-4
     for (int i = 0; i < 8; ++i)
@@ -519,11 +567,13 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.setColour (juce::Colours::black);
         g.setFont (labelFont (13.0f));
         static const char* msgs[] = { "",
-            "SETUP 1/4 : sur le LPD8, PROGRAM + PAD 1, puis appuie sur PAD 1",
-            "SETUP 2/4 : programme 1, tourne K1",
-            "SETUP 3/4 : PROGRAM + PAD 2, puis appuie sur PAD 1",
-            "SETUP 4/4 : programme 2, tourne K1" };
-        g.drawText (juce::String::fromUTF8 (msgs[juce::jlimit (0, 4, step)]), banner, juce::Justification::centred);
+            "SETUP 1/6 : sur le LPD8, PROGRAM + PAD 1, puis appuie sur PAD 1",
+            "SETUP 2/6 : programme 1, tourne K1",
+            "SETUP 3/6 : PROGRAM + PAD 2, puis appuie sur PAD 1",
+            "SETUP 4/6 : programme 2, tourne K1",
+            "SETUP 5/6 : PROGRAM + PAD 3, puis appuie sur PAD 1 (mode NOTE)",
+            "SETUP 6/6 : programme 3, tourne K1" };
+        g.drawText (juce::String::fromUTF8 (msgs[juce::jlimit (0, 6, step)]), banner, juce::Justification::centred);
     }
 
     // KILL flash

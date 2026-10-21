@@ -129,13 +129,42 @@ int main()
         r.p.startLearn();
         r.note (10, 36, true); r.run (0.05); r.cc (10, 70, 5); r.run (0.05);
         r.note (11, 44, true); r.run (0.05); r.cc (11, 80, 5); r.run (0.05);
-        std::printf ("setup                : step %d, P1 %s, P2 %s\n", r.p.getLearnStep(), r.p.isLearned (0) ? "ok" : "NO", r.p.isLearned (1) ? "ok" : "NO");
-        r.note (11, 44, true); r.note (11, 44, false); r.run (0.3);   // PAD 1 of program 2 = Brume ON
+        r.note (12, 52, true); r.run (0.05); r.cc (12, 90, 5); r.run (0.05);
+        std::printf ("setup                : step %d, P1 %s, P2 %s, P3 %s\n", r.p.getLearnStep(), r.p.isLearned (0) ? "ok" : "NO", r.p.isLearned (1) ? "ok" : "NO", r.p.isLearned (2) ? "ok" : "NO");
+        r.note (11, 48, true); r.note (11, 48, false); r.run (0.3);   // PAD 5 of program 2 = Brume ON
         std::printf ("program detection    : program %d (expect 1), Brume on %s\n", r.p.getProgram() + 1 - 1, r.p.isBrumeOn() ? "yes" : "NO");
         r.cc (11, 84, 110); m = r.run (3.0);   // K5 = NOISE
         std::printf ("Brume (Revolo noise) : %6.1f dB rms\n", m.rmsDb());
         r.note (10, 36, true); r.note (10, 36, false); r.run (0.05);
         std::printf ("back to program 1    : program %d (expect 0)\n", r.p.getProgram());
+
+        // program 3: Pattern Player. NOTE-mode pad = steps 1-8, PROG CHNG-mode pad = steps 9-16
+        r.cc (11, 84, 0); r.note (11, 48, true); r.note (11, 48, false); r.run (0.05);   // Brume off
+        const int before = r.p.getPatternSteps();
+        r.note (12, 53, true); r.note (12, 53, false); r.run (0.05);   // PAD 2 -> step 2
+        const int afterNote = r.p.getPatternSteps();
+        r.pending.addEvent (juce::MidiMessage::programChange (12, 2), 0); r.run (0.05);   // PAD 3 in PROG CHNG -> step 11
+        const int afterPC = r.p.getPatternSteps();
+        std::printf ("P3 steps             : program %d (expect 2), step 2 %s, step 11 %s, page %d (expect 1)\n", r.p.getProgram(),
+                     ((afterNote ^ before) == (1 << 1)) ? "toggled" : "NO", ((afterPC ^ afterNote) == (1 << 10)) ? "toggled" : "NO", r.p.getPatternPage());
+        r.track.on = false; r.run (1.0);
+        m = r.run (2.0);
+        std::printf ("P3 volume 0          : %6.1f dB (silent)\n", m.rmsDb());
+        r.cc (12, 90, 100); m = r.run (2.0);
+        std::printf ("P3 pattern playing   : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
+        r.cc (12, 90, 0); r.track.on = true;
+
+        // switch: in SONS SEULS the music passes untouched whatever the effect sends
+        {
+            Rig a, b;
+            for (auto* x : { &a, &b }) x->p.apvts.getParameter (id::fxTarget)->setValueNotifyingHost (1.0f);
+            b.cc (10, 75, 120); b.cc (10, 74, 120);   // reverb + dub echo sends wide open on b
+            a.run (1.0); b.run (1.0);
+            const auto ma = a.run (3.0), mb = b.run (3.0);
+            std::printf ("SONS SEULS           : music %6.1f dB, with FX sends %6.1f dB (expect equal)\n", ma.rmsDb(), mb.rmsDb());
+            b.p.apvts.getParameter (id::fxTarget)->setValueNotifyingHost (0.0f); b.run (1.0);
+            std::printf ("MUSIQUE + SONS       : with FX sends %6.1f dB (expect louder/wetter)\n", b.run (3.0).rmsDb());
+        }
 
         r.clockBpm = 128.0; r.run (2.0);
         std::printf ("MIDI clock           : source %d, %.2f BPM (expect 1, 128)\n", r.p.getSyncSource(), r.p.getBpm());
@@ -168,6 +197,22 @@ int main()
         snap ("pad-p1.png");
         r.note (10, 41, true); r.note (10, 41, false); r.note (11, 45, true); r.note (11, 45, false); r.run (0.3);
         snap ("pad-p2.png");
+        r.p.selectProgram (2); r.p.setPatternPage (0); r.cc (12, 90, 90); r.run (0.4);
+        snap ("pad-p3.png");
+        r.p.setPatternPage (1); r.run (0.1);
+        snap ("pad-p3b.png");
+    }
+    // Pattern Player demo: 909 hats offbeat over the track with duck, then RMX clap backbeat in SONS SEULS
+    {
+        Rig r; r.recording = true;
+        r.p.selectProgram (2);
+        auto set = [&] (const char* pid, float v) { r.p.apvts.getParameter (pid)->setValueNotifyingHost (v); };
+        set (id::ppKit, 0.5f); set (id::ppSound, 3.0f / 7.0f); set (id::ppPattern, 1.0f / 7.0f); set (id::ppVolume, 0.8f); set (id::ppDecay, 0.3f);
+        r.run (4.0);
+        set (id::ppSound, 0.0f); set (id::ppPattern, 0.0f); set (id::ppDuck, 0.8f); set (id::ppDecay, 0.7f); r.run (4.0);
+        set (id::ppKit, 1.0f); set (id::ppSound, 2.0f / 7.0f); set (id::ppPattern, 2.0f / 7.0f); set (id::ppSwing, 0.5f); set (id::ppDuck, 0.0f);
+        set (id::fxTarget, 1.0f); set (id::reverb, 0.6f); r.run (6.0);
+        saveWav (r.rec, "pad-pattern.wav");
     }
 
     // demo: track, snare build with speed changes, K1 and K2 up, drop: K1 down + HPF echo throw, reverb, crush,
@@ -221,9 +266,9 @@ int main()
         Rig r; r.track.on = false; r.recording = true;
         r.p.selectProgram (1);
         r.p.knobFromScreen (4, 0.7f, 1);
-        r.p.padFromScreen (0, true, 1);
+        r.p.padFromScreen (4, true, 1);
         r.run (8.0);
-        r.p.padFromScreen (0, true, 1);   // off: tail
+        r.p.padFromScreen (4, true, 1);   // off: tail
         r.run (4.0);
         saveWav (r.rec, "pad-noise.wav");
     }

@@ -71,6 +71,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout PadProcessor::createLayout()
     ps.push_back (std::make_unique<F> (juce::ParameterID { id::bpm, 1 }, "Tempo (no sync)", juce::NormalisableRange<float> (60.0f, 200.0f, 0.1f), 124.0f,
                                        A().withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " BPM"; })));
     add (id::master, "Master", 0.8f, pct);
+    ps.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id::fxTarget, 1 }, "Sounds Only", false));
+    add (id::ppVolume, "Pattern Volume", 0.0f, fxText);
+    add (id::ppPitch, "Pattern Pitch", 0.5f, [] (float v, int) { const int s = juce::roundToInt (-12.0f + 24.0f * v); return (s > 0 ? "+" : "") + juce::String (s) + " st"; });
+    add (id::ppDecay, "Pattern Decay", 1.0f, pct);
+    add (id::ppDuck, "Pattern Duck", 0.0f, fxText);
+    add (id::ppKit, "Pattern Kit", 0.0f, [] (float v, int) { return juce::String (pad::pp::kitName (stepsOf (v, pad::pp::numKits))); });
+    add (id::ppSound, "Pattern Sound", 0.0f, [] (float v, int) { return juce::String (pad::pp::soundName (stepsOf (v, pad::pp::soundsPerKit))); });
+    add (id::ppPattern, "Pattern", 0.0f, [] (float v, int) { return "PATTERN " + juce::String (stepsOf (v, pad::pp::numPatterns) + 1); });
+    add (id::ppSwing, "Pattern Swing", 0.0f, pct);
     ps.push_back (std::make_unique<F> (juce::ParameterID { id::syncOffset, 1 }, "Sync Offset", juce::NormalisableRange<float> (-60.0f, 60.0f, 1.0f), 0.0f,
                                        A().withStringFromValueFunction ([] (float v, int) { return (v > 0 ? "+" : "") + juce::String (juce::roundToInt (v)) + " ms"; })));
     return { ps.begin(), ps.end() };
@@ -95,6 +104,8 @@ void PadProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     shortFx.prepare (fs, 3); longFx.prepare (fs, 3); dubFx.prepare (fs, 4);
     reverbFx.prepare (fs);
     revBuf.setSize (2, maxBlock);
+    musicBuf.setSize (2, maxBlock);
+    ppKits.prepare (fs, kit.s);
     queue.reset (fs);
     queueReady.store (true);
 }
@@ -174,9 +185,23 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
         clockForBrume.addEvent (m, 0);
         return;
     }
-    if (! (m.isNoteOnOrOff() || m.isController())) return;
-
     const int ch = m.getChannel();
+    if (m.isProgramChange())
+    {
+        // pads in PROG CHNG mode: steps 9-16 of the Pattern Player (program 3)
+        const auto& m3 = maps[2];
+        if (m3.learned && ch == m3.padChannel) program.store (2);
+        if (program.load() == 2)
+        {
+            ppPage.store (1);
+            const int step = 8 + (m.getProgramChangeNumber() % 8);
+            ppSteps.store (ppSteps.load() ^ (1 << step));
+            padHit[(size_t) (step - 8)].store (uiTime());
+            setEvent ("STEP " + juce::String (step + 1));
+        }
+        return;
+    }
+    if (! (m.isNoteOnOrOff() || m.isController())) return;
     // ---- clicks on the screen ----
     if (ch == kScreenChannel)
     {
@@ -189,12 +214,12 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
     const int step = learnStep.load();
     if (step > 0)
     {
-        auto& mp = maps[(size_t) (step <= 2 ? 0 : 1)];
-        if ((step == 1 || step == 3) && m.isNoteOn()) { mp.padChannel = ch; mp.padNote0 = m.getNoteNumber(); learnStep.store (step + 1); return; }
-        if ((step == 2 || step == 4) && m.isController())
+        auto& mp = maps[(size_t) ((step - 1) / 2)];
+        if ((step % 2 == 1) && m.isNoteOn()) { mp.padChannel = ch; mp.padNote0 = m.getNoteNumber(); learnStep.store (step + 1); return; }
+        if ((step % 2 == 0) && m.isController())
         {
             mp.knobChannel = ch; mp.knobCC0 = m.getControllerNumber(); mp.learned = true;
-            learnStep.store (step == 4 ? 0 : step + 1);
+            learnStep.store (step == 6 ? 0 : step + 1);
             return;
         }
         return;
@@ -207,9 +232,19 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
         {
             const auto& mp = maps[(size_t) p];
             if (mp.learned && ch == mp.padChannel && note >= mp.padNote0 && note < mp.padNote0 + numPads)
-            { program.store (p); handlePad (p, note - mp.padNote0, m.isNoteOn(), m.getFloatVelocity()); return; }
+            {
+                program.store (p);
+                if (p == 2) ppPage.store (0);   // NOTE mode = steps 1-8
+                handlePad (p, note - mp.padNote0, m.isNoteOn(), m.getFloatVelocity());
+                return;
+            }
         }
-        if (note >= 36 && note < 44) { handlePad (program.load(), note - 36, m.isNoteOn(), m.getFloatVelocity()); return; }   // not set up yet
+        if (note >= 36 && note < 44)   // not set up yet
+        {
+            if (program.load() == 2) ppPage.store (0);
+            handlePad (program.load(), note - 36, m.isNoteOn(), m.getFloatVelocity());
+            return;
+        }
         return;
     }
 
@@ -277,23 +312,25 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
         return;
     }
 
+    if (prog == 2)
+    {
+        if (! down) return;
+        const int step = ppPage.load() * 8 + pad;   // the page shown (screen) or set by NOTE / PROG CHNG
+        ppSteps.store (ppSteps.load() ^ (1 << step));
+        setEvent ("STEP " + juce::String (step + 1) + ((ppSteps.load() >> step) & 1 ? " ON" : " OFF"));
+        return;
+    }
+
     if (prog == 1)
     {
         auto& b = brumeEngine.apvts;
-        switch (pad)
+        switch (pad)   // top row only (pads 5-8); the bottom row does nothing here
         {
-            case 0: if (down) setParam (b, brume::id::on, b.getRawParameterValue (brume::id::on)->load() > 0.5f ? 0.0f : 1.0f); break;
-            case 1: if (down) brumeEngine.tap(); break;
-            case 2: if (down) setParam (b, brume::id::tremolo, b.getRawParameterValue (brume::id::tremolo)->load() > 0.05f ? 0.0f : 0.8f); break;
-            case 3: setParam (b, brume::id::on, down ? 1.0f : 0.0f); break;   // HOLD: on while the pad is held
-            default:
-                if (down)
-                {
-                    static const int div[] = { 2, 4, 6, 8 };   // 1/4 1/8 1/16 1/32 in Brume's division list
-                    setParam (b, brume::id::tempo, (float) div[pad - 4] / 9.0f);
-                    if (b.getRawParameterValue (brume::id::tremolo)->load() < 0.05f) setParam (b, brume::id::tremolo, 0.8f);
-                }
-                break;
+            case 4: if (down) setParam (b, brume::id::on, b.getRawParameterValue (brume::id::on)->load() > 0.5f ? 0.0f : 1.0f); break;
+            case 5: if (down) brumeEngine.tap(); break;
+            case 6: if (down) setParam (b, brume::id::tremolo, b.getRawParameterValue (brume::id::tremolo)->load() > 0.05f ? 0.0f : 0.8f); break;
+            case 7: setParam (b, brume::id::on, down ? 1.0f : 0.0f); break;   // HOLD: on while the pad is held
+            default: break;
         }
     }
 }
@@ -302,6 +339,7 @@ void PadProcessor::handleKnob (int prog, int knob, float v)
 {
     if (prog == 0) setParam (apvts, p1KnobId (knob), v);
     else if (prog == 1) setParam (brumeEngine.apvts, p2KnobId (knob), v);
+    else if (prog == 2) setParam (apvts, p3KnobId (knob), v);
 }
 
 void PadProcessor::doKill()
@@ -392,9 +430,31 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
         fxKilledUi[(size_t) k].store (fx[(size_t) k].killed && fx[(size_t) k].target > 0.01f);
     }
 
-    // ---- 1) drums (X-PAD): rolls on the held speed pad, mixed into the music ----
+    // ---- our sounds go on their own bus; the music is kept aside (MUSIQUE / SONS SEULS switch) ----
     auto* L = buffer.getWritePointer (0);
     auto* R = buffer.getWritePointer (1);
+    if (musicBuf.getNumSamples() < n) musicBuf.setSize (2, n, false, false, true);
+    for (int c = 0; c < 2; ++c) musicBuf.copyFrom (c, 0, buffer, c, 0, n);
+    buffer.clear (0, 0, n); buffer.clear (1, 0, n);
+    const bool soundsOnly = isSoundsOnly();
+    auto* mL = musicBuf.getWritePointer (0);
+    auto* mR = musicBuf.getWritePointer (1);
+
+    // Pattern Player settings
+    const int patIdx = stepsOf (apvts.getRawParameterValue (id::ppPattern)->load(), pad::pp::numPatterns);
+    if (patIdx != lastPattern) { if (lastPattern >= 0) ppSteps.store (pad::pp::patternMask (patIdx)); lastPattern = patIdx; }
+    const float ppVol = apvts.getRawParameterValue (id::ppVolume)->load();
+    const float ppGain = ppVol * ppVol * 1.6f;
+    const float ppSemis = -12.0f + 24.0f * apvts.getRawParameterValue (id::ppPitch)->load();
+    const float ppDecayV = apvts.getRawParameterValue (id::ppDecay)->load();
+    const float ppGate = 0.03f + 2.0f * ppDecayV * ppDecayV;
+    const float duckAmt = soundsOnly ? 0.0f : apvts.getRawParameterValue (id::ppDuck)->load();
+    const float duckCoef = std::exp (-1.0f / ((0.05f + 0.35f * ppDecayV) * (float) fs));
+    const int ppKitI = stepsOf (apvts.getRawParameterValue (id::ppKit)->load(), pad::pp::numKits);
+    const int ppSoundI = stepsOf (apvts.getRawParameterValue (id::ppSound)->load(), pad::pp::soundsPerKit);
+    const float ppSwingV = apvts.getRawParameterValue (id::ppSwing)->load();
+
+    // ---- 1) drums (X-PAD rolls) and Pattern Player ----
     {
         const float dv = apvts.getRawParameterValue (id::drums)->load();
         const float drumGain = dv * dv * 1.75f;
@@ -415,10 +475,35 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
                     lastRollIdx = ri;
                 }
             }
+            // Pattern Player: 16 steps locked to the bar (so it always restarts on beat 1), odd steps late with swing
+            {
+                const double sp = b * 4.0;
+                auto idx = (juce::int64) std::floor (sp);
+                if ((idx & 1) && sp - (double) idx < ppSwingV * 0.5) --idx;
+                if (idx > lastPPStep || idx < lastPPStep - 4)
+                {
+                    lastPPStep = idx;
+                    const int step = (int) (((idx % 16) + 16) % 16);
+                    ppPlayStep.store (step);
+                    if (ppVol > 0.01f && ((ppSteps.load() >> step) & 1))
+                    {
+                        ppVoices[(size_t) nextPP].trigger (ppKits.s[(size_t) ppKitI][(size_t) ppSoundI], ppSoundI, (float) fs, ppSemis, 1.0f, ppGate, 0.5f);
+                        nextPP = (nextPP + 1) % (int) ppVoices.size();
+                        duckEnv = 1.0f;
+                    }
+                }
+            }
             float y = 0.0f;
             for (auto& v : voices) if (v.active) y += v.tick();
             y *= drumGain;
-            L[i] += y; R[i] += y;
+            float py = 0.0f;
+            for (auto& v : ppVoices) if (v.active) py += v.tick();
+            y += py * ppGain;
+            // DUCK: the music dips under each pattern hit (only when the effects act on the music)
+            const float g = 1.0f - duckAmt * 0.85f * duckEnv;
+            duckEnv *= duckCoef;
+            if (soundsOnly) { L[i] = y; R[i] = y; }
+            else { L[i] = mL[i] * g + y; R[i] = mR[i] * g + y; }
             b += inc;
         }
         beat = b;
@@ -471,10 +556,12 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     }
     reverbFx.process (rl, rr, n);
     const float master = std::pow (apvts.getRawParameterValue (id::master)->load(), 2.0f) * 1.25f;
+    // soft clip that leaves everything below -1 dB untouched (the music passes cleanly in SONS SEULS)
+    auto clip = [] (float x) { const float a = std::abs (x); if (a <= 0.89f) return x; const float y = 0.89f + 0.11f * std::tanh ((a - 0.89f) / 0.11f); return x < 0.0f ? -y : y; };
     for (int i = 0; i < n; ++i)
     {
-        L[i] = std::tanh ((L[i] + rl[i] * 1.4f) * master);
-        R[i] = std::tanh ((R[i] + rr[i] * 1.4f) * master);
+        L[i] = clip ((L[i] + rl[i] * 1.4f) * master + (soundsOnly ? mL[i] : 0.0f));
+        R[i] = clip ((R[i] + rr[i] * 1.4f) * master + (soundsOnly ? mR[i] : 0.0f));
     }
 
     sampleCounter += n;
@@ -498,6 +585,7 @@ float PadProcessor::getKnobValue (int prog, int k) const
 {
     if (prog == 0) return apvts.getRawParameterValue (p1KnobId (k))->load();
     if (prog == 1) if (auto* p = brumeEngine.apvts.getParameter (p2KnobId (k))) return p->getValue();
+    if (prog == 2) return apvts.getRawParameterValue (p3KnobId (k))->load();
     return 0.0f;
 }
 
@@ -505,6 +593,7 @@ juce::String PadProcessor::getKnobText (int prog, int k) const
 {
     if (prog == 0) if (auto* p = apvts.getParameter (p1KnobId (k))) return p->getCurrentValueAsText();
     if (prog == 1) if (auto* p = brumeEngine.apvts.getParameter (p2KnobId (k))) return p->getCurrentValueAsText();
+    if (prog == 2) if (auto* p = apvts.getParameter (p3KnobId (k))) return p->getCurrentValueAsText();
     return {};
 }
 
@@ -534,6 +623,7 @@ void PadProcessor::getStateInformation (juce::MemoryBlock& destData)
     }
     state.appendChild (map, nullptr);
     state.setProperty ("program", program.load(), nullptr);
+    state.setProperty ("ppSteps", ppSteps.load(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
 }
 
@@ -554,6 +644,7 @@ void PadProcessor::setStateInformation (const void* data, int sizeInBytes)
         mp.padNote0 = e.getProperty ("note0", 36); mp.knobChannel = e.getProperty ("knobCh", 0); mp.knobCC0 = e.getProperty ("cc0", 70);
     }
     program.store (juce::jlimit (0, numProgs - 1, (int) state.getProperty ("program", 0)));
+    if (state.hasProperty ("ppSteps")) { ppSteps.store ((int) state.getProperty ("ppSteps")); lastPattern = -2; }
     state.removeChild (b, nullptr);
     state.removeChild (map, nullptr);
     apvts.replaceState (state);

@@ -30,6 +30,12 @@ namespace bpad
         static constexpr const char* sound = "p1_sound";
         static constexpr const char* bpm = "bpm";          static constexpr const char* master = "master";
         static constexpr const char* syncOffset = "sync_offset";   // ms, fine tuning of the drums against the music
+        static constexpr const char* fxTarget = "fx_target";       // off = effects on the music + our sounds, on = our sounds only
+        // program 3: Pattern Player
+        static constexpr const char* ppVolume = "p3_volume"; static constexpr const char* ppPitch = "p3_pitch";
+        static constexpr const char* ppDecay = "p3_decay";   static constexpr const char* ppDuck = "p3_duck";
+        static constexpr const char* ppKit = "p3_kit";       static constexpr const char* ppSound = "p3_sound";
+        static constexpr const char* ppPattern = "p3_pattern"; static constexpr const char* ppSwing = "p3_swing";
     }
     inline const char* p1KnobId (int k)
     {
@@ -43,8 +49,16 @@ namespace bpad
                                      brume::id::noise, brume::id::tremolo, brume::id::tempo, brume::id::filter };
         return ids[juce::jlimit (0, 7, k)];
     }
+    inline const char* p3KnobId (int k)
+    {
+        static const char* ids[] = { id::ppVolume, id::ppPitch, id::ppDecay, id::ppDuck, id::ppKit, id::ppSound, id::ppPattern, id::ppSwing };
+        return ids[juce::jlimit (0, 7, k)];
+    }
+    inline int stepsOf (float v, int count) { return juce::jlimit (0, count - 1, (int) std::lround (v * (float) (count - 1))); }
     inline const char* knobLabel (int prog, int k)
     {
+        static const char* p3[] = { "VOLUME", "PITCH", "DECAY", "DUCK", "KIT", "SOUND", "PATTERN", "SWING" };
+        if (prog == 2) return p3[k];
         static const char* p1[] = { "DRUMS VOL", "PITCH", "SHORT DELAY", "LONG DELAY", "DUB ECHO", "REVERB", "SIZE / FEEDBACK", "TIME" };
         static const char* p2[] = { "REVERB", "CHARACTER", "LENGTH", "AIR", "NOISE", "TREMOLO", "TEMPO", "FILTER" };
         if (prog == 0) return p1[k];
@@ -55,7 +69,7 @@ namespace bpad
     inline const char* padLabel (int prog, int pad)
     {
         static const char* p1[] = { "1/4", "1/8", "1/16", "1/32", "KICK", "SNARE", "CLAP", "HAT" };
-        static const char* p2[] = { "ON / OFF", "TAP", "TREM ON", "HOLD", "TREM 1/4", "TREM 1/8", "TREM 1/16", "TREM 1/32" };
+        static const char* p2[] = { "", "", "", "", "ON / OFF", "TAP", "TREM ON", "HOLD" };   // bottom row unused
         if (prog == 0) return p1[pad];
         if (prog == 1) return p2[pad];
         return "-";
@@ -106,7 +120,7 @@ public:
 
     // ---- state for the editor ----
     int   getProgram() const          { return program.load(); }
-    int   getLearnStep() const        { return learnStep.load(); }   // 0 none, 1 P1 pad, 2 P1 knob, 3 P2 pad, 4 P2 knob
+    int   getLearnStep() const        { return learnStep.load(); }   // 0 none, 1/2 P1 pad/knob, 3/4 P2, 5/6 P3
     bool  isLearned (int p) const     { return maps[(size_t) p].learned; }
     int   getSyncSource() const       { return syncSource.load(); }   // 0 internal, 1 MIDI clock, 2 host, 3 Ableton Link
     int   getLinkPeers() const        { return linkPeers.load(); }
@@ -123,6 +137,12 @@ public:
     bool  isBrumeOn() const           { return brumeEngine.apvts.getRawParameterValue (brume::id::on)->load() > 0.5f; }
     int   getSelectedSound() const    { return (int) std::lround (apvts.getRawParameterValue (bpad::id::sound)->load() * 3.0f); }
     int   getActiveSound() const      { return activeSound.load(); }
+    // Pattern Player
+    int   getPatternSteps() const     { return ppSteps.load(); }
+    int   getPatternPage() const      { return ppPage.load(); }      // 0 = steps 1-8 (NOTE), 1 = steps 9-16 (PROG CHNG)
+    void  setPatternPage (int p)      { ppPage.store (juce::jlimit (0, 1, p)); }
+    int   getPatternPlayStep() const  { return ppPlayStep.load(); }
+    bool  isSoundsOnly() const        { return apvts.getRawParameterValue (bpad::id::fxTarget)->load() > 0.5f; }
     int   getActiveSpeed() const      { return activeSpeed.load(); }
 
 private:
@@ -158,6 +178,12 @@ private:
     // effects (program 1)
     std::array<pad::FxKnob, 8> fx;   // indices = knobs; 2-5 are the sends (KILL acts on them)
     pad::Echo shortFx, longFx, dubFx;
+    // Pattern Player (program 3)
+    pad::pp::Kits ppKits;
+    std::array<station::SampleVoice, 6> ppVoices; int nextPP = 0;
+    std::atomic<int> ppSteps { 0x1111 }, ppPage { 0 }, ppPlayStep { -1 };
+    int lastPattern = -1; juce::int64 lastPPStep = -1; float duckEnv = 0.0f;
+    juce::AudioBuffer<float> musicBuf;
     brume::FdnReverb reverbFx;
     juce::AudioBuffer<float> revBuf;
     float sm[8] {};          // smoothed send amounts
