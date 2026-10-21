@@ -134,6 +134,9 @@ public:
     juce::String getKnobText (int prog, int k) const;
     bool  isFxKilled (int k) const    { return fxKilledUi[(size_t) k].load(); }
     float getKillFlash() const;
+    // output meter: peak since the last call (the editor applies the ballistics)
+    float takePeak (int ch)           { return peakOut[(size_t) (ch & 1)].exchange (0.0f); }
+    static float masterDb (float v)   { return v < 0.001f ? -100.0f : 20.0f * std::log10 (v * v * 1.25f); }
     juce::String getMidiStatus() const;
     juce::String getLastEvent() const { const juce::ScopedLock sl (eventLock); return lastEvent; }
     bool  isBrumeOn() const           { return brumeEngine.apvts.getRawParameterValue (brume::id::on)->load() > 0.5f; }
@@ -196,6 +199,7 @@ private:
     juce::int64 lastClockSample = -1;
     std::atomic<int> syncSource { 0 };
     std::atomic<float> bpmUi { 124.0f }, barBeatUi { 0.0f };
+    std::array<std::atomic<float>, 2> peakOut {};
     juce::Array<double> taps;
     juce::MidiBuffer clockForBrume;
     // gives the embedded Brume our tempo and beat (so its tremolo follows Link too)

@@ -406,6 +406,7 @@ PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p
     masterKnob.setSliderStyle (juce::Slider::RotaryVerticalDrag);
     masterKnob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     masterKnob.setRotaryParameters (juce::degreesToRadians (-140.0f), juce::degreesToRadians (140.0f), true);
+    masterKnob.setDoubleClickReturnValue (true, std::sqrt (1.0 / 1.25));   // double-click = 0 dB
     body.addAndMakeVisible (masterKnob);
     masterAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id::master, masterKnob);
 
@@ -439,7 +440,7 @@ void PadEditor::layoutBody()
     setupBtn.setBounds (430, 404, 110, 34);
     offsetSlider.setBounds (556, 408, 130, 24);
     bpmSlider.setBounds (700, 408, 150, 24);
-    masterKnob.setBounds (870, 396, 46, 46);
+    masterKnob.setBounds (866, 390, 46, 46);
     helpBtn.setBounds (1000, 402, 40, 40);
 }
 
@@ -470,6 +471,15 @@ void PadEditor::timerCallback()
     ccBtn.setToggleState (proc.getKillFlash() > 0.0f, juce::dontSendNotification);
     bpmSlider.setEnabled (proc.getSyncSource() == 0);
     shownProg = prog;
+    // meter ballistics: instant attack, ~20 dB/s release, peak hold 1.5 s
+    for (int c = 0; c < 2; ++c)
+    {
+        const float pk = proc.takePeak (c);
+        meter[c] = std::max (pk, meter[c] * 0.86f);
+        if (pk >= peakHold[c] || --holdTicks[c] <= 0) { peakHold[c] = pk; holdTicks[c] = 45; }
+        if (pk > 0.89f) clipTicks = 45;   // the output limiter is working
+    }
+    if (clipTicks > 0) --clipTicks;
     body.repaint();
 }
 
@@ -620,7 +630,48 @@ void PadEditor::paintBody (juce::Graphics& g)
                     juce::Rectangle<float> (32.0f, 426.0f, 390.0f, 18.0f), juce::Justification::centredLeft);
         g.setFont (labelFont (9.0f, true, 0.1f));
         g.drawText ("TEMPO " + juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1) + " (NO SYNC)", juce::Rectangle<float> (700.0f, 434.0f, 150.0f, 12.0f), juce::Justification::centred);
-        g.drawText ("MASTER", juce::Rectangle<float> (853.0f, 442.0f, 80.0f, 12.0f), juce::Justification::centred);
+        {
+            const float mdb = PadProcessor::masterDb (proc.apvts.getRawParameterValue (id::master)->load());
+            const juce::String mtxt = mdb <= -99.0f ? juce::String ("-INF") : (mdb > 0.05f ? "+" : "") + juce::String (mdb, 1);
+            g.drawText ("MASTER " + mtxt + " dB", juce::Rectangle<float> (839.0f, 440.0f, 100.0f, 12.0f), juce::Justification::centred);
+        }
+        // stereo output meter, -48 .. +3 dB
+        {
+            const float top = 370.0f, bot = 444.0f, lo = -40.0f, hi = 3.0f;
+            auto yOf = [&] (float db) { return juce::jmap (juce::jlimit (lo, hi, db), lo, hi, bot, top); };
+            auto toDb = [] (float a) { return a > 1.0e-5f ? 20.0f * std::log10 (a) : -100.0f; };
+            for (int c = 0; c < 2; ++c)
+            {
+                const float x = 950.0f + 11.0f * (float) c;
+                g.setColour (juce::Colours::black.withAlpha (0.6f));
+                g.fillRect (x, top, 9.0f, bot - top);
+                const float lvl = toDb (meter[c]);
+                if (lvl > lo)
+                {
+                    const float y = yOf (lvl);
+                    juce::ColourGradient grad (juce::Colour (0xffff3030), 0.0f, yOf (0.0f), juce::Colour (0xff4cd964), 0.0f, yOf (-18.0f), false);
+                    grad.addColour (0.5, juce::Colour (0xffffc040));
+                    g.setGradientFill (grad);
+                    g.fillRect (x, y, 9.0f, bot - y);
+                }
+                const float h = toDb (peakHold[c]);
+                if (h > lo) { g.setColour (h > -1.0f ? juce::Colour (0xffff3030) : print); g.fillRect (x, yOf (h) - 1.0f, 9.0f, 2.0f); }
+            }
+            g.setFont (labelFont (8.0f, false));
+            for (float db : { 0.0f, -6.0f, -12.0f, -24.0f, -40.0f })
+            {
+                g.setColour (db == 0.0f ? juce::Colour (0xffff6060) : printDim);
+                if (db != -6.0f) g.drawText (juce::String ((int) db), juce::Rectangle<float> (922.0f, yOf (db) - 5.0f, 24.0f, 10.0f), juce::Justification::centredRight);
+                g.fillRect (947.0f, yOf (db), 2.0f, 1.0f);
+            }
+            const float pk = toDb (std::max (peakHold[0], peakHold[1]));
+            g.setFont (labelFont (8.5f, true));
+            g.setColour (clipTicks > 0 ? juce::Colour (0xffff3030) : printDim);
+            g.drawText (clipTicks > 0 ? juce::String ("LIMIT") : pk <= -99.0f ? juce::String ("-INF") : juce::String (pk, 1),
+                        juce::Rectangle<float> (935.0f, 447.0f, 50.0f, 10.0f), juce::Justification::centred);
+            g.setColour (printDim);
+            g.setFont (labelFont (9.0f, true, 0.1f));
+        }
         g.drawText ("SYNC OFFSET " + proc.apvts.getParameter (id::syncOffset)->getCurrentValueAsText(), juce::Rectangle<float> (546.0f, 434.0f, 150.0f, 12.0f), juce::Justification::centred);
         g.drawText ("WIKI", juce::Rectangle<float> (990.0f, 444.0f, 60.0f, 12.0f), juce::Justification::centred);
     }

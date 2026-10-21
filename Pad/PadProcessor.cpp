@@ -569,6 +569,12 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
         L[i] = clip ((L[i] + rl[i] * 1.4f) * master + (soundsOnly ? mL[i] : 0.0f));
         R[i] = clip ((R[i] + rr[i] * 1.4f) * master + (soundsOnly ? mR[i] : 0.0f));
     }
+    for (int c = 0; c < 2; ++c)
+    {
+        const float pk = buffer.getMagnitude (c, 0, n);
+        auto& a = peakOut[(size_t) c];
+        if (pk > a.load()) a.store (pk);
+    }
 
     sampleCounter += n;
     barBeatUi.store ((float) positiveMod (beatAtStart, 4.0));

@@ -70,6 +70,7 @@ private:
     Help help;
     bool programSelectMode = false;
     int shownProg = -1;
+    float meter[2] {}, peakHold[2] {}; int holdTicks[2] {}; int clipTicks = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PadEditor)
 };
