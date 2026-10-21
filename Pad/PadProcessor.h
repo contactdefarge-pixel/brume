@@ -37,7 +37,9 @@ namespace bpad
         static constexpr const char* ppKit = "p3_kit";       static constexpr const char* ppSound = "p3_sound";
         static constexpr const char* ppPattern = "p3_pattern"; static constexpr const char* ppSwing = "p3_swing";
     }
-    inline const char* p1KnobId (int k)
+    // program 1: physical knob -> function slot (K3 K4 K7 K8 = the four send FX, K5 K6 = SIZE/FB and TIME)
+    inline int p1Slot (int k) { static const int s[] = { 0, 1, 2, 3, 6, 7, 4, 5 }; return s[juce::jlimit (0, 7, k)]; }
+    inline const char* p1KnobId (int k)   // k = function slot
     {
         static const char* ids[] = { id::drums, id::pitch, id::shortDelay, id::longDelay, id::dubEcho, id::reverb, id::size, id::time };
         return ids[juce::jlimit (0, 7, k)];
@@ -59,9 +61,10 @@ namespace bpad
     {
         static const char* p3[] = { "VOLUME", "PITCH", "DECAY", "DUCK", "KIT", "SOUND", "PATTERN", "SWING" };
         if (prog == 2) return p3[k];
-        static const char* p1[] = { "DRUMS VOL", "PITCH", "SHORT DELAY", "LONG DELAY", "DUB ECHO", "REVERB", "SIZE / FEEDBACK", "TIME" };
+        if (prog == 3) return k == 0 ? "MASTER" : "";
+        static const char* p1[] = { "DRUMS VOL", "PITCH", "SHORT DELAY", "LONG DELAY", "DUB ECHO", "REVERB", "SIZE / FB", "TIME" };
         static const char* p2[] = { "REVERB", "CHARACTER", "LENGTH", "AIR", "NOISE", "TREMOLO", "TEMPO", "FILTER" };
-        if (prog == 0) return p1[k];
+        if (prog == 0) return p1[p1Slot (k)];
         if (prog == 1) return p2[k];
         return "-";
     }
@@ -71,10 +74,13 @@ namespace bpad
         static const char* p1[] = { "1/4", "1/8", "1/16", "1/32", "KICK", "SNARE", "CLAP", "HAT" };
         static const char* p2[] = { "", "", "", "", "ON / OFF", "TAP", "TREM ON", "HOLD" };   // bottom row unused
         if (prog == 0) return p1[pad];
+        static const char* p4[] = { "", "", "", "", "FX : MUSIQUE + SONS", "FX : SONS SEULS", "", "" };
         if (prog == 1) return p2[pad];
+        if (prog == 3) return p4[pad];
         return "-";
     }
     // Pattern Player: steps read like a page, top row first (PAD 5-8 = steps 1-4, PAD 1-4 = steps 5-8)
+    inline const char* programName (int p) { static const char* n[] = { "X-PAD + FX", "WHITE NOISE", "PATTERN PLAYER", "GLOBAL" }; return n[juce::jlimit (0, 3, p)]; }
     inline int stepOfPad (int pad) { return pad >= 4 ? pad - 4 : pad + 4; }
     inline float rollPerBeat (int pad) { static const float r[] = { 1.0f, 2.0f, 4.0f, 8.0f }; return r[juce::jlimit (0, 3, pad)]; }
     inline const char* soundName (int s) { static const char* n[] = { "KICK", "SNARE", "CLAP", "HAT" }; return n[juce::jlimit (0, 3, s)]; }
@@ -122,7 +128,7 @@ public:
 
     // ---- state for the editor ----
     int   getProgram() const          { return program.load(); }
-    int   getLearnStep() const        { return learnStep.load(); }   // 0 none, 1/2 P1 pad/knob, 3/4 P2, 5/6 P3, 7 P3 PROG CHNG pad 1
+    int   getLearnStep() const        { return learnStep.load(); }   // 0 none, 1/2 P1 pad/knob, 3/4 P2, 5/6 P3, 7/8 P4, 9 P3 PROG CHNG pad 1
     bool  isLearned (int p) const     { return maps[(size_t) p].learned; }
     int   getSyncSource() const       { return syncSource.load(); }   // 0 internal, 1 MIDI clock, 2 host, 3 Ableton Link
     int   getLinkPeers() const        { return linkPeers.load(); }
@@ -158,6 +164,7 @@ private:
     void handlePad (int prog, int pad, bool down, float velocity);
     void handleKnob (int prog, int knob, float v);
     void doKill();
+    void toggleFxTarget();
     void setParam (juce::AudioProcessorValueTreeState& t, const char* pid, float v);
     void triggerSound (int sound, float vel, float gateSeconds = 10.0f);
     void setEvent (const juce::String& s) { const juce::ScopedLock sl (eventLock); lastEvent = s; }
@@ -177,7 +184,8 @@ private:
     std::atomic<int> activeSound { -1 }, activeSpeed { 0 };   // latched: sound playing (-1 = none) and speed pad
     int activeBeforeCombo = -1;
     juce::int64 lastRollIdx = -1; float lastRollRate = 0.0f;
-    double lastPad5Time = -10.0, lastPad8Time = -10.0;
+    std::array<double, 8> comboTime { -10, -10, -10, -10, -10, -10, -10, -10 }; double lastComboPress = -10.0;
+    float tremBeforeCombo = 0.0f;
     float soundBeforeCombo = 1.0f / 3.0f;
 
     // effects (program 1)

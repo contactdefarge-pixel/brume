@@ -99,19 +99,19 @@ int main()
         r.run (1.0);
 
         // effects: each knob, then KILL with pads 5 + 8; the tail must keep ringing when the music stops
-        r.cc (10, 76, 76); r.cc (10, 77, 64);   // SIZE/FEEDBACK 60 %, TIME 50 %
-        for (int k = 2; k < 6; ++k)
+        r.cc (10, 74, 76); r.cc (10, 75, 64);   // K5 SIZE/FEEDBACK 60 %, K6 TIME 50 %
+        for (int k : { 2, 3, 6, 7 })   // K3 K4 K7 K8 = the send FX
         {
             r.cc (10, 70 + k, 100); m = r.run (2.0);
             std::printf ("K%d %-15s : %6.1f dB rms, %5.1f dB peak\n", k + 1, knobLabel (0, k), m.rmsDb(), m.peakDb());
             r.cc (10, 70 + k, 0); r.run (1.0);
         }
         // maximum feedback: the repeats must keep going when the send is closed (like the V10), until KILL
-        r.cc (10, 76, 127); r.cc (10, 72, 110); r.run (1.0); r.cc (10, 72, 0);
+        r.cc (10, 74, 127); r.cc (10, 72, 110); r.run (1.0); r.cc (10, 72, 0);
         r.track.on = false; auto inf = r.run (4.0); r.track.on = true;
         std::printf ("feedback max         : repeats after closing the send %5.1f dB (should still sound)\n", inf.rmsDb());
-        r.cc (10, 76, 76);
-        r.cc (10, 72, 110); r.cc (10, 73, 100); r.cc (10, 74, 90); r.run (2.0);
+        r.cc (10, 74, 76);
+        r.cc (10, 72, 110); r.cc (10, 73, 100); r.cc (10, 76, 90); r.run (2.0);
         double cpu = 0; r.run (4.0, &cpu);
         std::printf ("CPU (3 effects + music): %.1f %% of one core\n", cpu);
         r.track.on = false;
@@ -130,8 +130,9 @@ int main()
         r.note (10, 36, true); r.run (0.05); r.cc (10, 70, 5); r.run (0.05);
         r.note (11, 44, true); r.run (0.05); r.cc (11, 80, 5); r.run (0.05);
         r.note (12, 52, true); r.run (0.05); r.cc (12, 90, 5); r.run (0.05);
+        r.note (13, 60, true); r.run (0.05); r.cc (13, 100, 5); r.run (0.05);   // program 4 (GLOBAL)
         r.pending.addEvent (juce::MidiMessage::programChange (12, 0), 0); r.run (0.05);   // PROG CHNG + PAD 1
-        std::printf ("setup                : step %d, P1 %s, P2 %s, P3 %s\n", r.p.getLearnStep(), r.p.isLearned (0) ? "ok" : "NO", r.p.isLearned (1) ? "ok" : "NO", r.p.isLearned (2) ? "ok" : "NO");
+        std::printf ("setup                : step %d, P1 %s, P2 %s, P3 %s, P4 %s\n", r.p.getLearnStep(), r.p.isLearned (0) ? "ok" : "NO", r.p.isLearned (1) ? "ok" : "NO", r.p.isLearned (2) ? "ok" : "NO", r.p.isLearned (3) ? "ok" : "NO");
         r.note (11, 48, true); r.note (11, 48, false); r.run (0.3);   // PAD 5 of program 2 = Brume ON
         std::printf ("program detection    : program %d (expect 1), Brume on %s\n", r.p.getProgram() + 1 - 1, r.p.isBrumeOn() ? "yes" : "NO");
         r.cc (11, 84, 110); m = r.run (3.0);   // K5 = NOISE
@@ -153,6 +154,15 @@ int main()
         std::printf ("P3 volume 0          : %6.1f dB (silent)\n", m.rmsDb());
         r.cc (12, 90, 100); m = r.run (2.0);
         std::printf ("P3 pattern playing   : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
+        // PAD 6 + PAD 7 together = FX target toggle (no step change); program 4: K1 = MASTER, PAD 5 / PAD 6 = FX target
+        {
+            const int st = r.p.getPatternSteps();
+            r.note (12, 57, true); r.note (12, 58, true); r.note (12, 57, false); r.note (12, 58, false); r.run (0.05);
+            std::printf ("PAD 6+7 combo        : sounds only %s, steps unchanged %s\n", r.p.isSoundsOnly() ? "yes" : "NO", r.p.getPatternSteps() == st ? "yes" : "NO");
+            r.note (13, 64, true); r.note (13, 64, false); r.cc (13, 100, 64); r.run (0.05);
+            std::printf ("GLOBAL program       : program %d (expect 3), sounds only %s (expect no), master %s\n", r.p.getProgram(), r.p.isSoundsOnly() ? "YES" : "no", r.p.getKnobText (3, 0).toRawUTF8());
+            r.cc (13, 100, 114); r.note (12, 52, true); r.note (12, 52, false); r.run (0.05); r.note (12, 52, true); r.note (12, 52, false); r.run (0.05);
+        }
         r.p.killFx(); r.run (2.5); m = r.run (2.0);   // the last hit rings out (DECAY at 100 %)
         std::printf ("KILL (CC) all        : pattern after kill %6.1f dB (expect silent)\n", m.rmsDb());
         r.cc (12, 90, 0); r.track.on = true;
@@ -161,7 +171,7 @@ int main()
         {
             Rig a, b;
             for (auto* x : { &a, &b }) x->p.apvts.getParameter (id::fxTarget)->setValueNotifyingHost (1.0f);
-            b.cc (10, 75, 120); b.cc (10, 74, 120);   // reverb + dub echo sends wide open on b
+            b.cc (10, 77, 120); b.cc (10, 76, 120);   // K8 reverb + K7 dub echo sends wide open on b
             a.run (1.0); b.run (1.0);
             const auto ma = a.run (3.0), mb = b.run (3.0);
             std::printf ("SONS SEULS           : music %6.1f dB, with FX sends %6.1f dB (expect equal)\n", ma.rmsDb(), mb.rmsDb());
@@ -196,7 +206,7 @@ int main()
             out.deleteFile(); juce::FileOutputStream os (out); juce::PNGImageFormat().writeImageToStream (img, os);
             std::printf ("snapshot             : %s\n", out.getFullPathName().toRawUTF8());
         };
-        r.cc (10, 74, 70); r.cc (10, 76, 40); r.note (10, 38, true); r.note (10, 38, false); r.note (10, 41, true); r.note (10, 41, false); r.run (0.3);
+        r.cc (10, 76, 70); r.cc (10, 74, 40); r.note (10, 38, true); r.note (10, 38, false); r.note (10, 41, true); r.note (10, 41, false); r.run (0.3);
         snap ("pad-p1.png");
         r.note (10, 41, true); r.note (10, 41, false); r.note (11, 45, true); r.note (11, 45, false); r.run (0.3);
         snap ("pad-p2.png");
@@ -231,7 +241,7 @@ int main()
     // long delay, Revolo noise, KILL FX (tails ring out)
     {
         Rig r; r.recording = true;
-        auto knob = [&] (int k, float v) { r.cc (10, 70 + k, juce::roundToInt (v * 127.0f)); };
+        auto knob = [&] (int slot, float v) { static const int phys[] = { 0, 1, 2, 3, 6, 7, 4, 5 }; r.cc (10, 70 + phys[slot], juce::roundToInt (v * 127.0f)); };
         r.run (7.74);
         r.note (10, 41, true); r.note (10, 41, false);           // SNARE on (1/4)
         knob (0, 0.35f); knob (1, 0.5f);

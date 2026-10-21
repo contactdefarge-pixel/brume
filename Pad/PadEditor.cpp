@@ -6,27 +6,39 @@ using namespace bpad;
 namespace
 {
     constexpr int kW = PadEditor::baseW, kH = PadEditor::baseH;
-    const juce::Colour chassis { 0xff1c1d1f }, chassisHi { 0xff2a2b2e }, trim { 0xffc8202a }, print { 0xffe9e9e6 },
-                       printDim { 0xff8d9096 }, orange { 0xffff7a1a }, padRubber { 0xff121314 }, desk { 0xff0d0e10 };
+    // "Graphite" look: matte dark body, one orange accent, flat arc knobs, segmented meter
+    const juce::Colour desk { 0xff0b0c0e }, bodyTop { 0xff1c1e22 }, bodyBot { 0xff15161a }, edge { 0xff2a2d33 },
+                       panel { 0xff131417 }, panelEdge { 0xff24262b }, well { 0xff0f1013 }, wellEdge { 0xff262930 },
+                       print { 0xffe9eaee }, printDim { 0xff8a8e97 }, printFaint { 0xff5f636b }, orange { 0xffff7a1a },
+                       blue { 0xff3aa8ff }, green { 0xff3ddc84 }, red { 0xffff5a5a }, track { 0xff2a2d33 }, capFill { 0xff1f2125 }, capEdge { 0xff34373e };
 
-    juce::Font logoFont (float h, float kerning = 0.1f)
+    juce::Typeface::Ptr typeface (const char* data, int size) { return juce::Typeface::createSystemTypefaceFor (data, (size_t) size); }
+    juce::Typeface::Ptr interSemi() { static auto t = typeface (BinaryData::InterSemiBold_ttf, BinaryData::InterSemiBold_ttfSize); return t; }
+    juce::Typeface::Ptr interBold() { static auto t = typeface (BinaryData::InterBold_ttf, BinaryData::InterBold_ttfSize); return t; }
+    juce::Font logoFont (float h, float kerning = 0.08f)
     {
-        static juce::Typeface::Ptr tf = juce::Typeface::createSystemTypefaceFor (BinaryData::MichromaRegular_ttf, BinaryData::MichromaRegular_ttfSize);
+        static auto tf = typeface (BinaryData::SyncopateBold_ttf, BinaryData::SyncopateBold_ttfSize);
         juce::Font f (juce::FontOptions (tf).withHeight (h));
         f.setExtraKerningFactor (kerning);
         return f;
     }
-    juce::Font labelFont (float h, bool bold = true, float kerning = 0.04f)
+    juce::Font labelFont (float h, bool bold = true, float kerning = 0.06f)
     {
-        juce::Font f (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain));
+        juce::Font f (juce::FontOptions (bold ? interBold() : interSemi()).withHeight (h));
         f.setExtraKerningFactor (kerning);
         return f;
+    }
+    juce::Font monoFont (float h)
+    {
+        static auto tf = typeface (BinaryData::JetBrainsMonoMedium_ttf, BinaryData::JetBrainsMonoMedium_ttfSize);
+        return juce::Font (juce::FontOptions (tf).withHeight (h));
     }
 
     // geometry (base coordinates)
     const juce::Rectangle<float> kBody { 14.0f, 14.0f, 1032.0f, 330.0f };
-    constexpr int padSize = 90, padGap = 16, padX0 = 268, padTopY = 62, padBotY = 200;
-    constexpr int knobSize = 58, knobGap = 22, knobX0 = 704, knobTopY = 86, knobBotY = 224;
+    constexpr float kPanelX = 1058.0f;
+    constexpr int padSize = 90, padGap = 12, padX0 = 262, padTopY = 62, padBotY = 202;
+    constexpr int knobSize = 62, knobColW = 88, knobX0 = 674, knobTopY = 80, knobBotY = 222;
 
     juce::Rectangle<int> padBounds (int index)   // index 0..7 = PAD 1..8 (1-4 bottom row, 5-8 top row)
     {
@@ -36,43 +48,44 @@ namespace
     juce::Rectangle<int> knobBounds (int k)      // K1-K4 top, K5-K8 bottom
     {
         const int col = k % 4, y = k < 4 ? knobTopY : knobBotY;
-        return { knobX0 + col * (knobSize + knobGap), y, knobSize, knobSize };
+        return { knobX0 + col * knobColW + (knobColW - knobSize) / 2, y, knobSize, knobSize };
     }
 
-    juce::Colour padColour (const PadProcessor& p, int prog, int pad)
+    struct PadLook { juce::Colour colour; bool lit; };
+    PadLook padLook (const PadProcessor& p, int prog, int pad)
     {
         const float bb = p.getBarBeat();
         const bool onBeat = bb - std::floor (bb) < 0.2f;
         const bool down = p.padIsDown (pad);
         if (prog == 0)
         {
-            juce::ignoreUnused (down);
-            if (pad >= 4) return p.getActiveSound() == pad - 4 ? (onBeat ? juce::Colour (0xffffc070) : juce::Colour (0xffff8a1f)) : juce::Colour (0xff4a2408);
-            if (p.getActiveSpeed() == pad) return p.getActiveSound() >= 0 && onBeat ? juce::Colour (0xff9fe0ff) : juce::Colour (0xff3aa8ff);
-            return juce::Colour (0xff0c2a48);
+            if (pad >= 4) return { onBeat && p.getActiveSound() == pad - 4 ? orange.brighter (0.35f) : orange, p.getActiveSound() == pad - 4 };
+            return { p.getActiveSound() >= 0 && onBeat && p.getActiveSpeed() == pad ? blue.brighter (0.4f) : blue, p.getActiveSpeed() == pad };
         }
         if (prog == 1)
         {
             switch (pad)
             {
-                case 4: return p.isBrumeOn() ? juce::Colour (0xffff2020) : juce::Colour (0xff400808);
-                case 5: return onBeat ? juce::Colour (0xff40ff60) : juce::Colour (0xff0c3014);
-                case 6: return p.getKnobValue (1, 5) > 0.05f ? juce::Colour (0xffb050ff) : juce::Colour (0xff2a1040);
-                case 7: return down ? juce::Colours::white : juce::Colour (0xff383838);
-                default: return juce::Colour (0xff141414);   // bottom row unused in this program
+                case 4: return { red, p.isBrumeOn() };
+                case 5: return { green, onBeat };
+                case 6: return { juce::Colour (0xffb070ff), p.getKnobValue (1, 5) > 0.05f };
+                case 7: return { print, down };
+                default: return { edge, false };   // bottom row unused in this program
             }
         }
         if (prog == 2)
         {
             const int step = p.getPatternPage() * 8 + stepOfPad (pad);
             const bool on = (p.getPatternSteps() >> step) & 1;
-            const bool here = p.getPatternPlayStep() == step;
-            if (here) return on ? juce::Colours::white : juce::Colour (0xff606060);
-            const bool beatStart = step % 4 == 0;
-            return on ? (beatStart ? juce::Colour (0xffff3a3a) : juce::Colour (0xffff8a1f))
-                      : (beatStart ? juce::Colour (0xff3a1010) : juce::Colour (0xff2a1a08));
+            if (p.getPatternPlayStep() == step) return { print, true };
+            return { step % 4 == 0 ? red : orange, on };
         }
-        return juce::Colour (0xff202020);
+        if (prog == 3)
+        {
+            if (pad == 4) return { orange, ! p.isSoundsOnly() };
+            if (pad == 5) return { orange, p.isSoundsOnly() };
+        }
+        return { edge, false };
     }
 
     juce::String wikiText (int tab)
@@ -89,11 +102,12 @@ namespace
 "     Programme 1 = X-PAD (kick, snare, clap, hi-hat en roulements) + effets Send du DJM-V10\n"
 "     Programme 2 = WHITE NOISE (bruit blanc façon Revolo, réverbe, trémolo)\n"
 "     Programme 3 = PATTERN PLAYER (boîte à rythme 16 pas, comme dans Traktor)\n"
+"     Programme 4 = GLOBAL (K1 = MASTER, PAD 5 / PAD 6 = FX sur MUSIQUE + SONS / SONS SEULS)\n"
 "  Hydra reconnaît tout seul le programme utilisé (après le SETUP LPD8) et l'écran change ses étiquettes.\n"
 "- À l'écran : cliquer sur PROGRAM puis sur un des pads 1 à 4, ou utiliser les pads et boutons à la souris.\n"
 "- Tout est calé sur le tempo de Traktor grâce à l'horloge MIDI (onglet SYNCHRO).\n"
 "- KILL FX coupe tous les effets d'un coup en laissant les queues d'écho et de réverbe s'éteindre.\n"
-"- Le commutateur FX (sous les boutons de gauche) :\n"
+"- Le commutateur FX SUR (panneau de droite ; sur le LPD8 : PAD 6 + PAD 7 en même temps, ou programme 4) :\n"
 "     FX : MUSIQUE + SONS = les effets (delays, dub echo, réverbe, white noise, DUCK) s'appliquent au morceau ET aux sons d'Hydra.\n"
 "     FX : SONS SEULS = le morceau passe intact ; seuls les roulements, le bruit blanc et le pattern sont joués et traités par les effets.");
             case 1: return u (
@@ -106,16 +120,16 @@ namespace
 "BOUTONS\n"
 "   K1 DRUMS VOL : volume des roulements. Monter avant le drop, baisser au drop.\n"
 "   K2 PITCH : hauteur des sons (-12 à +12). Monter pendant un roulement = montée.\n\n"
-"   EFFETS SEND FAÇON DJM-V10 (K3 à K6 = quantité de musique envoyée dans chaque effet) :\n"
+"   EFFETS SEND FAÇON DJM-V10 (K3, K4, K7, K8 = quantité de musique envoyée dans chaque effet) :\n"
 "   K3 SHORT DELAY : delay court et serré.\n"
 "   K4 LONG DELAY : delay long, calé sur le tempo.\n"
-"   K5 DUB ECHO : écho sombre qui se fond en réverbe, comme sur la V10 / 900NXS2.\n"
-"   K6 REVERB : réverbe.\n"
-"   K7 SIZE / FEEDBACK : pour les delays et le dub echo, la durée des répétitions (à fond = elles continuent "
+"   K7 DUB ECHO : écho sombre qui se fond en réverbe, comme sur la V10 / 900NXS2.\n"
+"   K8 REVERB : réverbe.\n"
+"   K5 SIZE / FEEDBACK : pour les delays et le dub echo, la durée des répétitions (à fond = elles continuent "
 "jusqu'au KILL FX) ; pour la réverbe, la taille de la pièce (à fond = grande salle vide, plus de graves).\n"
-"   K8 TIME : la durée. Short delay de 1/32 à 1/8 de temps, long delay de 1/4 à 1 temps, dub echo de 1/8 à "
+"   K6 TIME : la durée. Short delay de 1/32 à 1/8 de temps, long delay de 1/4 à 1 temps, dub echo de 1/8 à "
 "1 temps, réverbe de courte à très longue. Tout est calé sur le tempo de Traktor.\n\n"
-"Baisser un envoi (K3 à K6) laisse la queue sonner. KILL FX ferme les 4 envois et réduit le feedback pour que les "
+"Baisser un envoi (K3, K4, K7, K8) laisse la queue sonner. KILL FX ferme les 4 envois et réduit le feedback pour que les "
 "queues s'éteignent toutes seules.\n\n"
 "EXEMPLE DE DROP : SNARE (le roulement part en 1/4), puis 1/8, 1/16, 1/32 en montant K1 et K2 ; au drop, "
 "ré-appuyer sur SNARE (ou baisser K1).");
@@ -162,9 +176,17 @@ namespace
 "   1. Sur le LPD8 : appuyer sur CC puis sur n'importe quel pad (en mode CC les pads envoient des messages CC, "
 "que Hydra interprète comme KILL FX). Appuyer ensuite sur NOTE pour revenir aux pads normaux.\n"
 "   2. Sur le LPD8 : appuyer en même temps sur PAD 5 et PAD 8.\n"
-"   3. À l'écran : le bouton CC (KILL FX).\n\n"
+"   3. À l'écran : le bouton CC · KILL.\n\n"
+"AUTRE COMBINAISON : PAD 6 + PAD 7 en même temps bascule FX SUR (MUSIQUE + SONS / SONS SEULS), dans tous les programmes.\n\n"
 "Le bouton CC seul n'envoie rien (c'est un changement de mode du contrôleur), d'où la combinaison CC + pad.\n\n"
 "Après un KILL, un effet reste coupé même si son bouton est encore tourné : il revient dès que tu bouges ce bouton.");
+            case 6: return u (
+"PROGRAMME 4 - GLOBAL\n\n"
+"Les réglages généraux, pilotables depuis le LPD8.\n\n"
+"   K1 MASTER : volume de sortie (la valeur en dB s'affiche aussi à droite, à côté du vu-mètre).\n"
+"   PAD 5 : FX sur MUSIQUE + SONS (les effets traitent le morceau et les sons d'Hydra).\n"
+"   PAD 6 : FX sur SONS SEULS (le morceau passe intact).\n\n"
+"Raccourci depuis n'importe quel programme : PAD 6 + PAD 7 en même temps bascule FX SUR.");
             case 5: return u (
 "SETUP LPD8 (une seule fois)\n\n"
 "Chaque programme du LPD8 envoie ses propres numéros de notes et de boutons. Le SETUP les apprend, ensuite "
@@ -172,8 +194,10 @@ namespace
 "   1. Cliquer sur SETUP LPD8.\n"
 "   2. Sur le LPD8 : PROGRAM + PAD 1 (programme 1), puis appuyer sur PAD 1, puis tourner K1.\n"
 "   3. PROGRAM + PAD 2 (programme 2), puis appuyer sur PAD 1, puis tourner K1.\n"
-"   4. PROGRAM + PAD 3 (programme 3), puis appuyer sur PAD 1, puis tourner K1, puis PROG CHNG et PAD 1 "
-"(pour que les pas 9 à 16 tombent sur les bons pads), puis revenir en NOTE.\n"
+"   4. PROGRAM + PAD 3 (programme 3), puis appuyer sur PAD 1, puis tourner K1.\n"
+"   5. PROGRAM + PAD 4 (programme 4), puis appuyer sur PAD 1, puis tourner K1.\n"
+"   6. Pour le Pattern Player : PROGRAM + PAD 3, PROG CHNG et PAD 1 (pour que les pas 9 à 16 tombent sur les bons pads), "
+"puis revenir en NOTE. Ou SKIP si inutile.\n"
 "C'est tout. Le LPD8 doit être en mode NOTE (bouton NOTE).\n\n"
 "Sans SETUP, Hydra fonctionne quand même avec les réglages d'usine du LPD8 MK2, et le programme se choisit à l'écran.\n\n"
 "Le LPD8 et le port d'horloge de Traktor sont ouverts automatiquement par l'app (rien à cocher).");
@@ -200,85 +224,116 @@ namespace
 }
 
 //==============================================================================
-void PadLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float startAngle, float endAngle, juce::Slider&)
+PadLookAndFeel::PadLookAndFeel()
 {
-    const auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (4.0f);
-    const float size = std::min (area.getWidth(), area.getHeight());
-    const auto c = area.getCentre();
-    const float rOuter = size * 0.5f, r = rOuter * 0.78f;
-    // dots for MIN / MAX like the LPD8 print
-    g.setColour (printDim);
-    for (int i = 0; i <= 10; ++i)
-    {
-        const float a = startAngle + (endAngle - startAngle) * (float) i / 10.0f;
-        const auto pt = c.getPointOnCircumference (rOuter * 0.98f, a);
-        g.fillEllipse (pt.x - 1.1f, pt.y - 1.1f, 2.2f, 2.2f);
-    }
-    g.setColour (juce::Colours::black.withAlpha (0.5f));
-    g.fillEllipse (c.x - r, c.y - r + 3.0f, r * 2, r * 2);
-    // knurled black knob
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3a3c40), c.x - r * 0.5f, c.y - r * 0.7f, juce::Colour (0xff0b0b0c), c.x + r * 0.4f, c.y + r, false));
-    g.fillEllipse (c.x - r, c.y - r, r * 2, r * 2);
-    g.setColour (juce::Colours::white.withAlpha (0.06f));
-    for (int i = 0; i < 24; ++i)
-    {
-        const float a = juce::MathConstants<float>::twoPi * (float) i / 24.0f;
-        g.drawLine ({ c.getPointOnCircumference (r * 0.86f, a), c.getPointOnCircumference (r * 0.99f, a) }, 1.0f);
-    }
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2d30), c.x - r * 0.3f, c.y - r * 0.5f, juce::Colour (0xff121314), c.x + r * 0.3f, c.y + r * 0.6f, true));
-    g.fillEllipse (c.x - r * 0.72f, c.y - r * 0.72f, r * 1.44f, r * 1.44f);
-    const float angle = startAngle + pos * (endAngle - startAngle);
-    juce::Path ptr;
-    ptr.addRoundedRectangle (-1.6f, -r * 0.98f, 3.2f, r * 0.62f, 1.6f);
-    g.setColour (juce::Colours::white);
-    g.fillPath (ptr, juce::AffineTransform::rotation (angle).translated (c));
+    // also styles the app's own windows (Audio/MIDI settings, menus)
+    setColourScheme ({ panel, desk, bodyTop, edge, print, orange, juce::Colours::black, well, print });
+    setColour (juce::ResizableWindow::backgroundColourId, panel);
+    setColour (juce::DocumentWindow::textColourId, print);
+    setColour (juce::ComboBox::backgroundColourId, well);
+    setColour (juce::ComboBox::outlineColourId, wellEdge);
+    setColour (juce::ComboBox::arrowColourId, orange);
+    setColour (juce::PopupMenu::backgroundColourId, bodyTop);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, orange);
+    setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::black);
+    setColour (juce::TextButton::buttonColourId, bodyTop);
+    setColour (juce::TextButton::buttonOnColourId, orange);
+    setColour (juce::ToggleButton::tickColourId, orange);
+    setColour (juce::ListBox::backgroundColourId, well);
+    setColour (juce::Slider::thumbColourId, orange);
+    setColour (juce::Slider::trackColourId, track);
+    setColour (juce::Label::textColourId, print);
 }
 
-void PadLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float, juce::Slider::SliderStyle, juce::Slider&)
+juce::Typeface::Ptr PadLookAndFeel::getTypefaceForFont (const juce::Font& f)
+{
+    if (f.getTypefaceName() == juce::Font::getDefaultSansSerifFontName())
+        return f.isBold() ? interBold() : interSemi();
+    return juce::LookAndFeel_V4::getTypefaceForFont (f);
+}
+
+void PadLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float startAngle, float endAngle, juce::Slider& s)
+{
+    const auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (2.0f);
+    const float size = std::min (area.getWidth(), area.getHeight());
+    const auto c = area.getCentre();
+    const float r = size * 0.5f - 3.0f, stroke = std::max (3.0f, size * 0.065f);
+    const juce::Colour arc = s.getProperties().contains ("arc") ? juce::Colour ((juce::uint32) (juce::int64) s.getProperties()["arc"]) : orange;
+    juce::Path bg, val;
+    bg.addCentredArc (c.x, c.y, r, r, 0.0f, startAngle, endAngle, true);
+    g.setColour (track);
+    g.strokePath (bg, juce::PathStrokeType (stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    const float angle = startAngle + pos * (endAngle - startAngle);
+    if (pos > 0.002f)
+    {
+        val.addCentredArc (c.x, c.y, r, r, 0.0f, startAngle, angle, true);
+        g.setColour (arc.withAlpha (0.25f));
+        g.strokePath (val, juce::PathStrokeType (stroke * 2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (arc);
+        g.strokePath (val, juce::PathStrokeType (stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    const float cr = r * 0.66f;
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.fillEllipse (c.x - cr, c.y - cr + 2.0f, cr * 2, cr * 2);
+    g.setGradientFill (juce::ColourGradient (capFill.brighter (0.15f), c.x, c.y - cr, capFill.darker (0.3f), c.x, c.y + cr, false));
+    g.fillEllipse (c.x - cr, c.y - cr, cr * 2, cr * 2);
+    g.setColour (capEdge);
+    g.drawEllipse (c.x - cr, c.y - cr, cr * 2, cr * 2, 1.0f);
+    g.setColour (print);
+    g.drawLine ({ c.getPointOnCircumference (cr * 0.2f, angle), c.getPointOnCircumference (cr * 0.85f, angle) }, 2.4f);
+}
+
+void PadLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float, juce::Slider::SliderStyle, juce::Slider& s)
 {
     const auto r = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
-    g.setColour (juce::Colours::black.withAlpha (0.6f));
-    g.fillRoundedRectangle (r.withSizeKeepingCentre (r.getWidth(), 4.0f), 2.0f);
-    g.setColour (orange);
-    g.fillRoundedRectangle (juce::Rectangle<float> (10.0f, std::min (16.0f, r.getHeight())).withCentre ({ pos, r.getCentreY() }), 3.0f);
+    const auto tr = r.withSizeKeepingCentre (r.getWidth(), 4.0f);
+    g.setColour (track);
+    g.fillRoundedRectangle (tr, 2.0f);
+    g.setColour (s.isEnabled() ? print : juce::Colour (0xff4a4d55));
+    g.fillRoundedRectangle (juce::Rectangle<float> (10.0f, std::min (15.0f, r.getHeight())).withCentre ({ pos, r.getCentreY() }), 3.0f);
 }
 
 void PadLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down)
 {
-    auto r = b.getLocalBounds().toFloat().reduced (1.5f);
+    auto r = b.getLocalBounds().toFloat().reduced (1.0f);
     const bool lit = b.getToggleState();
-    g.setColour (juce::Colours::black.withAlpha (0.45f));
-    g.fillRoundedRectangle (r.translated (0.0f, 2.0f), 5.0f);
-    g.setColour (lit ? juce::Colour (0xffd32a2a) : juce::Colour (0xff2b2c2f));
-    g.fillRoundedRectangle (r, 5.0f);
-    if (over || down) { g.setColour (juce::Colours::white.withAlpha (down ? 0.14f : 0.06f)); g.fillRoundedRectangle (r, 5.0f); }
-    g.setColour (juce::Colours::white.withAlpha (0.08f));
-    g.drawRoundedRectangle (r, 5.0f, 1.0f);
+    const bool kill = b.getComponentID() == "kill";
+    const auto accent = kill ? red : orange;
+    g.setColour (lit ? accent : juce::Colour (0xff1b1d21));
+    g.fillRoundedRectangle (r, 8.0f);
+    if (over || down) { g.setColour (juce::Colours::white.withAlpha (down ? 0.12f : 0.05f)); g.fillRoundedRectangle (r, 8.0f); }
+    g.setColour (lit ? accent : (kill ? juce::Colour (0xff5a2a2a) : juce::Colour (0xff2c2f35)));
+    g.drawRoundedRectangle (r, 8.0f, 1.0f);
 }
 
 void PadLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool)
 {
-    g.setColour (print.withAlpha (b.isEnabled() ? 0.95f : 0.4f));
-    g.setFont (labelFont (11.0f));
-    g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (3, 0), juce::Justification::centred, 1, 0.7f);
+    const bool lit = b.getToggleState();
+    const bool kill = b.getComponentID() == "kill";
+    juce::Colour c = lit ? juce::Colour (0xff16110c) : (kill ? red : juce::Colour (0xffc9ccd2));
+    if (! b.isEnabled() && ! lit) c = printFaint;
+    g.setColour (c);
+    g.setFont (labelFont (10.5f, true, 0.1f));
+    g.drawFittedText (b.getButtonText().toUpperCase(), b.getLocalBounds().reduced (4, 0), juce::Justification::centred, 2, 0.7f);
 }
 
 //==============================================================================
 PadEditor::Help::Help()
 {
-    static const char* names[] = { "PRINCIPE", "PROGRAMME 1", "PROGRAMME 2", "PROGRAMME 3", "KILL FX", "SETUP LPD8", "SYNCHRO & SON" };
-    for (int i = 0; i < 7; ++i)
+    static const char* names[] = { "PRINCIPE", "PROGRAMME 1", "PROGRAMME 2", "PROGRAMME 3", "PROGRAMME 4", "KILL FX", "SETUP LPD8", "SYNCHRO & SON" };
+    static const int page[] = { 0, 1, 2, 3, 6, 4, 5, 7 };
+    for (int i = 0; i < 8; ++i)
     {
         auto* b = tabs.add (new juce::TextButton (names[i]));
-        b->onClick = [this, i] { show (i); };
+        b->onClick = [this, i] { show (page[i]); };
         addAndMakeVisible (b);
     }
     close.onClick = [this] { setVisible (false); };
     addAndMakeVisible (close);
     text.setMultiLine (true); text.setReadOnly (true); text.setScrollbarsShown (true); text.setCaretVisible (false);
-    text.setFont (juce::Font (juce::FontOptions (15.0f)));
-    text.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff111316));
-    text.setColour (juce::TextEditor::textColourId, juce::Colour (0xffe8e6df));
+    text.setFont (labelFont (14.5f, false, 0.0f));
+    text.setColour (juce::TextEditor::backgroundColourId, well);
+    text.setColour (juce::TextEditor::textColourId, print);
     text.setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     text.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     addAndMakeVisible (text);
@@ -286,7 +341,8 @@ PadEditor::Help::Help()
 
 void PadEditor::Help::show (int tab)
 {
-    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setToggleState (i == tab, juce::dontSendNotification);
+    static const int page[] = { 0, 1, 2, 3, 6, 4, 5, 7 };
+    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setToggleState (page[i] == tab, juce::dontSendNotification);
     text.setText (wikiText (tab), false);
     text.moveCaretToTop (false);
     setVisible (true);
@@ -295,10 +351,14 @@ void PadEditor::Help::show (int tab)
 
 void PadEditor::Help::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xf4111316));
+    g.fillAll (panel.withAlpha (0.98f));
+    auto top = getLocalBounds().removeFromTop (44).reduced (16, 0);
+    g.setColour (print);
+    g.setFont (logoFont (16.0f));
+    g.drawText ("HYDRA", top, juce::Justification::centredLeft);
     g.setColour (orange);
-    g.setFont (logoFont (15.0f, 0.15f));
-    g.drawText ("WIKI HYDRA", getLocalBounds().removeFromTop (44).reduced (14, 0), juce::Justification::centredLeft);
+    g.setFont (labelFont (10.0f, true, 0.3f));
+    g.drawText ("WIKI", top.withTrimmedLeft (120), juce::Justification::centredLeft);
 }
 
 void PadEditor::Help::resized()
@@ -315,29 +375,56 @@ void PadEditor::Help::resized()
 //==============================================================================
 void PadEditor::PadButton::paint (juce::Graphics& g)
 {
-    auto r = getLocalBounds().toFloat().reduced (2.0f);
+    auto r = getLocalBounds().toFloat().reduced (3.0f);
     const int prog = ed.proc.getProgram();
-    auto col = padColour (ed.proc, prog, index);
+    auto look = padLook (ed.proc, prog, index);
+    const bool select = ed.programSelectMode && index < 4;
+    if (select) look = { orange, index == prog };
     const float fl = ed.proc.padFlash (index);
-    if (fl > 0.0f) col = col.brighter (fl * 0.8f);
-    if (ed.programSelectMode && index < 4) col = index == prog ? juce::Colours::white : juce::Colour (0xff5a2a10);
+    const float radius = 12.0f;
 
-    g.setColour (juce::Colours::black.withAlpha (0.5f));
-    g.fillRoundedRectangle (r.translated (0.0f, 3.0f), 7.0f);
-    // RGB light ring through the rubber, like the MK2
-    g.setColour (col);
-    g.fillRoundedRectangle (r, 7.0f);
-    g.setColour (padRubber);
-    g.fillRoundedRectangle (r.reduced (4.0f), 5.0f);
-    g.setGradientFill (juce::ColourGradient (col.withAlpha (0.28f), r.getCentreX(), r.getCentreY(), col.withAlpha (0.0f), r.getX(), r.getY(), true));
-    g.fillRoundedRectangle (r.reduced (4.0f), 5.0f);
+    if (look.lit)
+    {
+        // soft glow, coloured rim, light from the centre
+        for (int i = 3; i >= 1; --i)
+        {
+            g.setColour (look.colour.withAlpha (0.07f * (float) (4 - i)));
+            g.fillRoundedRectangle (r.expanded ((float) i * 2.0f), radius + (float) i * 2.0f);
+        }
+        g.setGradientFill (juce::ColourGradient (look.colour.withAlpha (0.32f), r.getCentreX(), r.getY() + r.getHeight() * 0.4f,
+                                                 juce::Colour (0xff141518), r.getX(), r.getBottom(), true));
+        g.fillRoundedRectangle (r, radius);
+        g.setColour (look.colour);
+        g.drawRoundedRectangle (r.reduced (1.0f), radius, 2.0f);
+    }
+    else
+    {
+        g.setColour (juce::Colour (0xff111215));
+        g.fillRoundedRectangle (r, radius);
+        g.setColour (look.colour == edge ? edge : look.colour.withAlpha (0.28f));
+        g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
+    }
+    if (fl > 0.0f) { g.setColour (juce::Colours::white.withAlpha (0.18f * fl)); g.fillRoundedRectangle (r, radius); }
 
-    g.setColour (print);
-    g.setFont (labelFont (prog == 2 && ! ed.programSelectMode ? 30.0f : 12.5f));
-    juce::String label = ed.programSelectMode && index < 4 ? "PROGRAM " + juce::String (index + 1)
-                       : prog == 2 ? juce::String (ed.proc.getPatternPage() * 8 + stepOfPad (index) + 1)
-                       : juce::String (padLabel (prog, index));
-    g.drawFittedText (label, r.reduced (8.0f).toNearestInt(), juce::Justification::centred, 2, 0.8f);
+    if (select)
+    {
+        g.setColour (look.lit ? print : orange);
+        g.setFont (labelFont (9.5f, true, 0.16f));
+        g.drawText ("PROGRAM " + juce::String (index + 1), r.withTrimmedBottom (r.getHeight() * 0.5f).withTrimmedTop (16.0f), juce::Justification::centred);
+        g.setColour (print);
+        g.setFont (labelFont (12.0f, true, 0.06f));
+        g.drawFittedText (programName (index), r.withTrimmedTop (r.getHeight() * 0.5f).reduced (6.0f, 0.0f).toNearestInt(), juce::Justification::centredTop, 2, 0.8f);
+        return;
+    }
+    g.setColour (look.lit ? juce::Colours::white : juce::Colour (0xffb9bcc3));
+    if (prog == 2)
+    {
+        g.setFont (labelFont (28.0f, true, 0.0f));
+        g.drawText (juce::String (ed.proc.getPatternPage() * 8 + stepOfPad (index) + 1), r, juce::Justification::centred);
+        return;
+    }
+    g.setFont (labelFont (12.0f, true, 0.1f));
+    g.drawFittedText (juce::String (padLabel (prog, index)).toUpperCase(), r.reduced (8.0f).toNearestInt(), juce::Justification::centred, 2, 0.8f);
 }
 
 void PadEditor::PadButton::mouseDown (const juce::MouseEvent&)
@@ -361,6 +448,7 @@ void PadEditor::PadButton::mouseUp (const juce::MouseEvent&)
 PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p)
 {
     setLookAndFeel (&lnf);
+    juce::LookAndFeel::setDefaultLookAndFeel (&lnf);   // the settings window gets the same look
     addAndMakeVisible (body);
     body.setBounds (0, 0, kW, kH);
 
@@ -386,12 +474,16 @@ PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p
     // in program 3 the NOTE / PROG CHNG buttons choose the half of the 16-step pattern (like on the LPD8)
     noteBtn.onClick = [this] { proc.setPatternPage (0); };
     pcBtn.onClick = [this] { proc.setPatternPage (1); };
-    targetAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, id::fxTarget, targetBtn);
-    targetBtn.setClickingTogglesState (true);
-    body.addAndMakeVisible (targetBtn);
+    auto setTarget = [this] (float v) { if (auto* prm = proc.apvts.getParameter (id::fxTarget)) prm->setValueNotifyingHost (v); };
+    fxMusicBtn.onClick = [setTarget] { setTarget (0.0f); };
+    fxOnlyBtn.onClick = [setTarget] { setTarget (1.0f); };
+    body.addAndMakeVisible (fxMusicBtn);
+    body.addAndMakeVisible (fxOnlyBtn);
+    ccBtn.setButtonText (juce::String::fromUTF8 ("CC · KILL"));
+    ccBtn.setComponentID ("kill");
     ccBtn.onClick = [this] { proc.killFx(); };
     setupBtn.onClick = [this] { if (proc.getLearnStep() > 0) proc.cancelLearn(); else proc.startLearn(); };
-    helpBtn.onClick = [this] { help.setBounds (getLocalBounds()); help.show (proc.getProgram() <= 2 ? 1 + proc.getProgram() : 0); };
+    helpBtn.onClick = [this] { help.setBounds (getLocalBounds()); { static const int page[] = { 1, 2, 3, 6 }; help.show (page[juce::jlimit (0, 3, proc.getProgram())]); } };
     for (auto* b : { &progBtn, &noteBtn, &pcBtn, &ccBtn, &setupBtn, &helpBtn }) body.addAndMakeVisible (*b);
 
     bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal);
@@ -423,6 +515,7 @@ PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p
 PadEditor::~PadEditor()
 {
     stopTimer();
+    if (&juce::LookAndFeel::getDefaultLookAndFeel() == &lnf) juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
 
@@ -430,19 +523,20 @@ void PadEditor::layoutBody()
 {
     for (int i = 0; i < 8; ++i) pads[(size_t) i]->setBounds (padBounds (i));
     for (int k = 0; k < 8; ++k) knobs[(size_t) k].setBounds (knobBounds (k));
-    // the four small buttons on the left, as on the MK2 (2 x 2)
-    progBtn.setBounds (44, 214, 84, 40);
-    noteBtn.setBounds (136, 214, 84, 40);
-    pcBtn.setBounds (44, 262, 84, 40);
-    ccBtn.setBounds (136, 262, 84, 40);
-    targetBtn.setBounds (44, 314, 176, 26);
-    // info panel on the right of the controller
-    const int px = 1058;
-    offsetSlider.setBounds (px + 16, 104, 128, 24);
-    bpmSlider.setBounds (px + 156, 104, 128, 24);
-    masterKnob.setBounds (px + 34, 160, 60, 60);
-    setupBtn.setBounds (px + 16, 286, 150, 34);
-    helpBtn.setBounds (px + 244, 282, 40, 40);
+    // the four mode buttons on the left, as on the MK2 (2 x 2)
+    progBtn.setBounds (42, 206, 90, 46);
+    noteBtn.setBounds (142, 206, 90, 46);
+    pcBtn.setBounds (42, 262, 90, 46);
+    ccBtn.setBounds (142, 262, 90, 46);
+    // side panel
+    const int px = (int) kPanelX;
+    offsetSlider.setBounds (px + 16, 112, 126, 20);
+    bpmSlider.setBounds (px + 158, 112, 126, 20);
+    masterKnob.setBounds (px + 16, 156, 66, 66);
+    fxMusicBtn.setBounds (px + 146, 174, 138, 32);
+    fxOnlyBtn.setBounds (px + 146, 212, 138, 32);
+    setupBtn.setBounds (px + 14, 290, 190, 40);
+    helpBtn.setBounds (px + 214, 290, 72, 40);
 }
 
 void PadEditor::resized()
@@ -460,14 +554,21 @@ void PadEditor::timerCallback()
         auto& s = knobs[(size_t) k];
         if (! s.isMouseButtonDown())
             s.setValue (proc.getKnobValue (prog, k), juce::dontSendNotification);
-        s.setEnabled (prog <= 2);
+        const bool used = juce::String (knobLabel (prog, k)).isNotEmpty();
+        s.setEnabled (used);
+        s.setAlpha (used ? 1.0f : 0.25f);
+        const bool killed = prog == 0 && proc.isFxKilled (p1Slot (k));
+        s.getProperties().set ("arc", (juce::int64) (killed ? juce::Colour (0xff5a2a2a) : prog == 3 ? print : orange).getARGB());
     }
     const bool p3 = prog == 2;
     noteBtn.setEnabled (p3); pcBtn.setEnabled (p3);
     noteBtn.setToggleState (! p3 || proc.getPatternPage() == 0, juce::dontSendNotification);
     pcBtn.setToggleState (p3 && proc.getPatternPage() == 1, juce::dontSendNotification);
-    targetBtn.setButtonText (proc.isSoundsOnly() ? "FX : SONS SEULS" : "FX : MUSIQUE + SONS");
-    setupBtn.setButtonText (proc.getLearnStep() > 0 ? "CANCEL SETUP" : "SETUP LPD8");
+    noteBtn.setButtonText (p3 ? juce::String::fromUTF8 ("NOTE · 1-8") : juce::String ("NOTE"));
+    pcBtn.setButtonText (p3 ? juce::String::fromUTF8 ("PROG CHNG · 9-16") : juce::String ("PROG CHNG"));
+    fxMusicBtn.setToggleState (! proc.isSoundsOnly(), juce::dontSendNotification);
+    fxOnlyBtn.setToggleState (proc.isSoundsOnly(), juce::dontSendNotification);
+    setupBtn.setButtonText (proc.getLearnStep() == 9 ? "SKIP (FIN)" : proc.getLearnStep() > 0 ? "CANCEL SETUP" : "SETUP LPD8");
     setupBtn.setToggleState (proc.getLearnStep() > 0, juce::dontSendNotification);
     ccBtn.setToggleState (proc.getKillFlash() > 0.0f, juce::dontSendNotification);
     bpmSlider.setEnabled (proc.getSyncSource() == 0);
@@ -492,203 +593,196 @@ void PadEditor::paintBody (juce::Graphics& g)
     const auto b = kBody;
     const int prog = proc.getProgram();
 
-    // chassis with red end caps
-    g.setColour (juce::Colours::black.withAlpha (0.6f));
-    g.fillRoundedRectangle (b.translated (0.0f, 6.0f), 14.0f);
-    g.setColour (trim);
-    g.fillRoundedRectangle (b, 14.0f);
-    const auto top = b.reduced (9.0f, 0.0f);
-    g.setGradientFill (juce::ColourGradient (chassisHi, top.getX(), top.getY(), chassis, top.getX(), top.getBottom(), false));
-    g.fillRect (top);
-    g.setColour (juce::Colours::white.withAlpha (0.04f));
-    g.fillRect (top.withHeight (1.5f));
-
-    // logo block (own print, no third-party brand)
-    g.setColour (print);
-    g.setFont (logoFont (26.0f, 0.12f));
-    g.setFont (logoFont (40.0f, 0.10f));
-    g.drawText ("HYDRA", juce::Rectangle<float> (42.0f, 56.0f, 210.0f, 50.0f), juce::Justification::centredLeft);
-    g.setColour (trim.brighter (0.2f));
-    g.fillRect (44.0f, 110.0f, 176.0f, 2.0f);
-    g.setColour (printDim);
-    g.setFont (labelFont (9.0f, true, 0.16f));
-    g.drawText ("X-PAD  -  FX  -  NOISE  -  STEPS", juce::Rectangle<float> (44.0f, 126.0f, 210.0f, 14.0f), juce::Justification::centredLeft);
-
-    // program indicator (what the pads and knobs control now)
-    {
-        const auto pr = juce::Rectangle<float> (44.0f, 152.0f, 176.0f, 46.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.5f));
-        g.fillRoundedRectangle (pr, 6.0f);
-        g.setColour (orange);
-        g.setFont (logoFont (11.0f, 0.12f));
-        g.drawText ("PROGRAM " + juce::String (prog + 1), pr.withHeight (24.0f).translated (0.0f, 2.0f), juce::Justification::centred);
-        g.setColour (print);
-        g.setFont (labelFont (11.0f));
-        static const char* names[] = { "X-PAD + FX", "WHITE NOISE", "PATTERN PLAYER", "(EMPTY)" };
-        g.drawText (names[juce::jlimit (0, 3, prog)], pr.withTrimmedTop (22.0f), juce::Justification::centred);
-    }
-    g.setColour (printDim);
-    g.setFont (labelFont (8.5f, true, 0.1f));
-    g.drawText ("+ PAD 1-4", progBtn.getBounds().toFloat().translated (0.0f, 40.0f).withHeight (11.0f), juce::Justification::centred);
+    // body
+    g.setColour (juce::Colours::black.withAlpha (0.55f));
+    g.fillRoundedRectangle (b.translated (0.0f, 5.0f), 18.0f);
+    g.setGradientFill (juce::ColourGradient (bodyTop, 0.0f, b.getY(), bodyBot, 0.0f, b.getBottom(), false));
+    g.fillRoundedRectangle (b, 18.0f);
+    g.setColour (edge);
+    g.drawRoundedRectangle (b.reduced (0.5f), 18.0f, 1.0f);
     g.setColour (orange);
-    g.drawText ("KILL FX", ccBtn.getBounds().toFloat().translated (0.0f, 40.0f).withHeight (11.0f), juce::Justification::centred);
-    if (prog == 2)
+    g.fillRoundedRectangle (juce::Rectangle<float> (b.getX(), b.getY() + 26.0f, 3.0f, b.getHeight() - 52.0f), 1.5f);
+
+    // logo
     {
-        g.setColour (printDim);
-        g.drawText ("STEPS 1-8", noteBtn.getBounds().toFloat().translated (0.0f, -12.0f).withHeight (11.0f), juce::Justification::centred);
-        g.drawText ("STEPS 9-16", pcBtn.getBounds().toFloat().translated (0.0f, 40.0f).withHeight (11.0f), juce::Justification::centred);
+        const auto lr = juce::Rectangle<float> (42.0f, 40.0f, 210.0f, 40.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colours::white, lr.getX(), 0.0f, juce::Colour (0xffb9c3ff), lr.getX() + 170.0f, 0.0f, false));
+        g.setFont (logoFont (29.0f));
+        g.drawText ("HYDRA", lr, juce::Justification::centredLeft);
+        g.setColour (orange);
+        g.setFont (labelFont (10.0f, false, 0.34f));
+        g.drawText ("AIO TOOLBOX", juce::Rectangle<float> (43.0f, 84.0f, 210.0f, 14.0f), juce::Justification::centredLeft);
     }
 
-    // pad print: "PAD n" above, "PROG n" in orange for pads 1-4
+    // program well
+    {
+        const auto pr = juce::Rectangle<float> (42.0f, 120.0f, 190.0f, 62.0f);
+        g.setColour (well);
+        g.fillRoundedRectangle (pr, 10.0f);
+        g.setColour (wellEdge);
+        g.drawRoundedRectangle (pr.reduced (0.5f), 10.0f, 1.0f);
+        g.setColour (orange);
+        g.setFont (labelFont (9.5f, true, 0.16f));
+        g.drawText ("PROGRAM " + juce::String (prog + 1), pr.withHeight (30.0f).translated (0.0f, 4.0f), juce::Justification::centred);
+        g.setColour (print);
+        g.setFont (labelFont (13.5f, true, 0.04f));
+        g.drawText (programName (prog), pr.withTrimmedTop (28.0f).withTrimmedBottom (6.0f), juce::Justification::centred);
+    }
+
+    // pad print
     for (int i = 0; i < 8; ++i)
     {
-        const auto pbn = padBounds (i).toFloat();
-        g.setColour (print);
-        g.setFont (labelFont (9.5f));
-        if (prog == 2)   // Pattern Player: the step number replaces the pad print
-        {
-            g.setColour (orange);
-            g.drawText ("STEP", pbn.translated (0.0f, -16.0f).withHeight (14.0f), juce::Justification::centredLeft);
-            continue;
-        }
-        g.drawText ("PAD " + juce::String (i + 1), pbn.translated (0.0f, -16.0f).withHeight (14.0f), juce::Justification::centredLeft);
-        if (i < 4)
-        {
-            g.setColour (orange);
-            g.drawText ("PROG " + juce::String (i + 1), pbn.translated (0.0f, -16.0f).withHeight (14.0f), juce::Justification::centredRight);
-        }
+        const auto pbn = padBounds (i).toFloat().translated (3.0f, -17.0f).withHeight (13.0f);
+        g.setColour (printFaint);
+        g.setFont (labelFont (9.0f, true, 0.14f));
+        g.drawText (prog == 2 ? juce::String ("STEP") : "PAD " + juce::String (i + 1), pbn, juce::Justification::centredLeft);
     }
 
-    // knob print: K-box, function (changes with the program), value
+    // knob print: id, function (changes with the program), value
     for (int k = 0; k < 8; ++k)
     {
         const auto kb = knobBounds (k).toFloat();
-        const auto boxR = juce::Rectangle<float> (22.0f, 13.0f).withCentre ({ kb.getCentreX(), kb.getY() - 34.0f });
-        g.setColour (print);
-        g.drawRoundedRectangle (boxR, 2.0f, 1.0f);
-        g.setFont (labelFont (9.0f));
-        g.drawText ("K" + juce::String (k + 1), boxR, juce::Justification::centred);
-        const bool killed = prog == 0 && proc.isFxKilled (k);
-        g.setColour (killed ? juce::Colour (0xffff4040) : orange);
-        g.setFont (labelFont (10.0f));
-        g.drawFittedText (knobLabel (prog, k), juce::Rectangle<int> ((int) kb.getCentreX() - 40, (int) kb.getY() - 22, 80, 14), juce::Justification::centred, 1, 0.7f);
-        g.setColour (printDim);
-        g.setFont (labelFont (9.0f, false));
-        g.drawText (killed ? juce::String ("KILLED") : proc.getKnobText (prog, k), juce::Rectangle<float> (kb.getCentreX() - 40.0f, kb.getBottom() + 1.0f, 80.0f, 12.0f), juce::Justification::centred);
+        const auto label = juce::String (knobLabel (prog, k));
+        g.setColour (printFaint);
+        g.setFont (labelFont (9.0f, true, 0.12f));
+        g.drawText ("K" + juce::String (k + 1), juce::Rectangle<float> (kb.getCentreX() - 40.0f, kb.getY() - 38.0f, 80.0f, 12.0f), juce::Justification::centred);
+        if (label.isEmpty()) continue;
+        const bool killed = prog == 0 && proc.isFxKilled (p1Slot (k));
+        g.setColour (killed ? red : orange);
+        g.setFont (labelFont (9.5f, true, 0.1f));
+        g.drawFittedText (label, juce::Rectangle<int> ((int) kb.getCentreX() - 44, (int) kb.getY() - 23, 88, 13), juce::Justification::centred, 1, 0.7f);
+        g.setColour (killed ? red.withAlpha (0.8f) : printDim);
+        g.setFont (monoFont (10.0f));
+        g.drawText (killed ? juce::String ("KILLED") : proc.getKnobText (prog, k), juce::Rectangle<float> (kb.getCentreX() - 44.0f, kb.getBottom() + 3.0f, 88.0f, 13.0f), juce::Justification::centred);
     }
 
     // setup assistant
     if (const int step = proc.getLearnStep(); step > 0)
     {
-        const auto banner = juce::Rectangle<float> (250.0f, 22.0f, 790.0f, 30.0f);
+        const auto banner = juce::Rectangle<float> (250.0f, 20.0f, 790.0f, 30.0f);
         g.setColour (orange);
-        g.fillRoundedRectangle (banner, 6.0f);
-        g.setColour (juce::Colours::black);
-        g.setFont (labelFont (13.0f));
+        g.fillRoundedRectangle (banner, 8.0f);
+        g.setColour (juce::Colour (0xff16110c));
+        g.setFont (labelFont (12.0f, true, 0.02f));
         static const char* msgs[] = { "",
-            "SETUP 1/7 : sur le LPD8, PROGRAM + PAD 1, puis appuie sur PAD 1",
-            "SETUP 2/7 : programme 1, tourne K1",
-            "SETUP 3/7 : PROGRAM + PAD 2, puis appuie sur PAD 1",
-            "SETUP 4/7 : programme 2, tourne K1",
-            "SETUP 5/7 : PROGRAM + PAD 3, puis appuie sur PAD 1 (mode NOTE)",
-            "SETUP 6/7 : programme 3, tourne K1",
-            "SETUP 7/7 : programme 3, appuie sur PROG CHNG puis sur PAD 1 (ou CANCEL si inutile)" };
-        g.drawText (juce::String::fromUTF8 (msgs[juce::jlimit (0, 7, step)]), banner, juce::Justification::centred);
+            "SETUP 1/9 : sur le LPD8, PROGRAM + PAD 1, puis appuie sur PAD 1",
+            "SETUP 2/9 : programme 1, tourne K1",
+            "SETUP 3/9 : PROGRAM + PAD 2, puis appuie sur PAD 1",
+            "SETUP 4/9 : programme 2, tourne K1",
+            "SETUP 5/9 : PROGRAM + PAD 3, puis appuie sur PAD 1 (mode NOTE)",
+            "SETUP 6/9 : programme 3, tourne K1",
+            "SETUP 7/9 : PROGRAM + PAD 4, puis appuie sur PAD 1",
+            "SETUP 8/9 : programme 4, tourne K1",
+            "SETUP 9/9 : PROGRAM + PAD 3, PROG CHNG puis PAD 1 (ou SKIP)" };
+        g.drawText (juce::String::fromUTF8 (msgs[juce::jlimit (0, 9, step)]), banner, juce::Justification::centred);
     }
 
     // KILL flash
     if (const float kf = proc.getKillFlash(); kf > 0.0f)
     {
-        g.setColour (juce::Colour (0xffff3030).withAlpha (0.35f * kf));
-        g.drawRoundedRectangle (b.reduced (2.0f), 14.0f, 6.0f);
+        g.setColour (red.withAlpha (0.5f * kf));
+        g.drawRoundedRectangle (b.reduced (1.5f), 18.0f, 3.0f);
     }
 
-    // info panel on the right of the controller
+    // ---- side panel ----
+    const float px = kPanelX;
     {
-        const float px = 1058.0f;
-        g.setColour (juce::Colours::black.withAlpha (0.5f));
-        g.fillRoundedRectangle (juce::Rectangle<float> (px, 20.0f, 300.0f, 330.0f), 12.0f);
-        g.setColour (juce::Colour (0xff17181b));
-        g.fillRoundedRectangle (juce::Rectangle<float> (px, 14.0f, 300.0f, 330.0f), 12.0f);
+        const auto pnl = juce::Rectangle<float> (px, 14.0f, 300.0f, 330.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillRoundedRectangle (pnl.translated (0.0f, 5.0f), 18.0f);
+        g.setColour (panel);
+        g.fillRoundedRectangle (pnl, 18.0f);
+        g.setColour (panelEdge);
+        g.drawRoundedRectangle (pnl.reduced (0.5f), 18.0f, 1.0f);
+    }
+    // status screen
+    {
+        const auto sc = juce::Rectangle<float> (px + 14.0f, 26.0f, 272.0f, 72.0f);
+        g.setColour (well);
+        g.fillRoundedRectangle (sc, 10.0f);
+        g.setColour (wellEdge);
+        g.drawRoundedRectangle (sc.reduced (0.5f), 10.0f, 1.0f);
         const int src = proc.getSyncSource();
-        g.setFont (logoFont (12.0f, 0.08f));
-        g.setColour (src == 1 || src == 3 ? juce::Colour (0xff4cd964) : orange);
-        const juce::String srcName = src == 1 ? "MIDI CLOCK  " : src == 3 ? "LINK  " : src == 2 ? "HOST  " : "INTERNAL  ";
-        g.drawText (srcName + juce::String (proc.getBpm(), 1) + " BPM", juce::Rectangle<float> (px + 16.0f, 26.0f, 210.0f, 20.0f), juce::Justification::centredLeft);
-        // beat dots
+        const juce::String srcName = src == 1 ? "MIDI CLOCK" : src == 3 ? "LINK" : src == 2 ? "HOST" : "INTERNAL";
+        g.setColour (src == 1 || src == 3 ? green : orange);
+        g.setFont (labelFont (9.5f, true, 0.16f));
+        g.drawText (srcName, juce::Rectangle<float> (sc.getX() + 12.0f, sc.getY() + 8.0f, 120.0f, 12.0f), juce::Justification::centredLeft);
+        g.setColour (print);
+        g.setFont (labelFont (21.0f, true, 0.0f));
+        const juce::String bpmTxt = juce::String (proc.getBpm(), 1);
+        g.drawText (bpmTxt, juce::Rectangle<float> (sc.getX() + 12.0f, sc.getY() + 20.0f, 90.0f, 26.0f), juce::Justification::centredLeft);
+        g.setColour (printFaint);
+        g.setFont (labelFont (9.5f, true, 0.12f));
+        g.drawText ("BPM", juce::Rectangle<float> (sc.getX() + 12.0f + labelFont (21.0f, true, 0.0f).getStringWidthFloat (bpmTxt) + 6.0f, sc.getY() + 28.0f, 40.0f, 14.0f), juce::Justification::centredLeft);
         const int beatNow = (int) proc.getBarBeat();
         for (int i = 0; i < 4; ++i)
         {
-            g.setColour (i == beatNow ? (i == 0 ? juce::Colour (0xffff3030) : orange) : juce::Colour (0xff2e3034));
-            g.fillEllipse (px + 226.0f + 16.0f * (float) i, 31.0f, 10.0f, 10.0f);
+            g.setColour (i == beatNow ? (i == 0 ? red : orange) : track);
+            g.fillEllipse (sc.getRight() - 72.0f + 16.0f * (float) i, sc.getY() + 12.0f, 9.0f, 9.0f);
         }
-        g.setFont (labelFont (11.0f, false));
-        g.setColour (print.withAlpha (0.8f));
         const int peers = proc.getLinkPeers();
-        g.drawFittedText (proc.getMidiStatus() + "   LINK " + (peers > 0 ? juce::String (peers) + " PEER" + (peers > 1 ? "S" : "") : juce::String ("WAITING")),
-                          juce::Rectangle<int> ((int) px + 16, 52, 270, 16), juce::Justification::centredLeft, 1, 0.7f);
         g.setColour (printDim);
+        g.setFont (monoFont (9.5f));
+        g.drawFittedText (proc.getMidiStatus() + juce::String::fromUTF8 (" · LINK ") + (peers > 0 ? juce::String (peers) + " PEER" + (peers > 1 ? "S" : "") : juce::String ("WAITING")),
+                          juce::Rectangle<int> ((int) sc.getX() + 12, (int) sc.getY() + 46, 250, 12), juce::Justification::centredLeft, 1, 0.7f);
         const auto ev = proc.getLastEvent();
-        g.drawFittedText ((ev.isNotEmpty() ? ev + "    " : juce::String()) + "V" + Updater::currentVersion(),
-                          juce::Rectangle<int> ((int) px + 16, 72, 270, 16), juce::Justification::centredLeft, 1, 0.7f);
-        g.setColour (juce::Colours::white.withAlpha (0.06f));
-        g.fillRect (px + 14.0f, 94.0f, 272.0f, 1.0f);
-        g.fillRect (px + 14.0f, 146.0f, 272.0f, 1.0f);
-        g.fillRect (px + 14.0f, 272.0f, 272.0f, 1.0f);
-        g.setColour (printDim);
-        g.setFont (labelFont (9.0f, true, 0.1f));
-        g.drawText ("SYNC OFFSET " + proc.apvts.getParameter (id::syncOffset)->getCurrentValueAsText(), juce::Rectangle<float> (px + 6.0f, 130.0f, 148.0f, 12.0f), juce::Justification::centred);
-        g.drawText ("TEMPO " + juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1) + " (NO SYNC)", juce::Rectangle<float> (px + 146.0f, 130.0f, 148.0f, 12.0f), juce::Justification::centred);
+        g.setColour (printFaint);
+        g.drawFittedText ((ev.isNotEmpty() ? ev + juce::String::fromUTF8 (" · ") : juce::String()) + "V" + Updater::currentVersion(),
+                          juce::Rectangle<int> ((int) sc.getX() + 12, (int) sc.getY() + 58, 250, 11), juce::Justification::centredLeft, 1, 0.7f);
+    }
+    g.setFont (labelFont (9.0f, true, 0.1f));
+    g.setColour (printFaint);
+    g.drawText ("SYNC OFFSET", juce::Rectangle<float> (px + 16.0f, 134.0f, 70.0f, 12.0f), juce::Justification::centredLeft);
+    g.drawText ("TEMPO", juce::Rectangle<float> (px + 158.0f, 134.0f, 40.0f, 12.0f), juce::Justification::centredLeft);
+    g.setColour (juce::Colour (0xffc9ccd2));
+    g.setFont (monoFont (9.5f));
+    g.drawText (proc.apvts.getParameter (id::syncOffset)->getCurrentValueAsText(), juce::Rectangle<float> (px + 86.0f, 134.0f, 56.0f, 12.0f), juce::Justification::centredRight);
+    g.drawText (proc.getSyncSource() == 0 ? juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1) : juce::String ("SYNC"),
+                juce::Rectangle<float> (px + 198.0f, 134.0f, 86.0f, 12.0f), juce::Justification::centredRight);
+    // master
+    {
+        const float mdb = PadProcessor::masterDb (proc.apvts.getRawParameterValue (id::master)->load());
+        g.setColour (printFaint);
+        g.setFont (labelFont (9.0f, true, 0.14f));
+        g.drawText ("MASTER", juce::Rectangle<float> (px + 9.0f, 226.0f, 80.0f, 12.0f), juce::Justification::centred);
+        g.setColour (print);
+        g.setFont (labelFont (13.0f, true, 0.0f));
+        g.drawText ((mdb <= -99.0f ? juce::String ("-INF") : (mdb > 0.05f ? "+" : "") + juce::String (mdb, 1)) + " dB",
+                    juce::Rectangle<float> (px + 9.0f, 240.0f, 80.0f, 16.0f), juce::Justification::centred);
+    }
+    // segmented stereo meter, -40 .. +3 dB
+    {
+        constexpr int nSeg = 20;
+        const float top = 158.0f, segH = 3.6f, step = 5.0f, lo = -40.0f, hi = 3.0f;
+        auto toDb = [] (float a) { return a > 1.0e-5f ? 20.0f * std::log10 (a) : -100.0f; };
+        for (int c = 0; c < 2; ++c)
         {
-            const float mdb = PadProcessor::masterDb (proc.apvts.getRawParameterValue (id::master)->load());
-            const juce::String mtxt = mdb <= -99.0f ? juce::String ("-INF") : (mdb > 0.05f ? "+" : "") + juce::String (mdb, 1);
-            g.drawText ("MASTER", juce::Rectangle<float> (px + 14.0f, 224.0f, 100.0f, 12.0f), juce::Justification::centred);
-            g.setColour (print);
-            g.setFont (logoFont (12.0f, 0.04f));
-            g.drawText (mtxt + " dB", juce::Rectangle<float> (px + 14.0f, 240.0f, 100.0f, 16.0f), juce::Justification::centred);
-        }
-        // stereo output meter, -40 .. +3 dB
-        {
-            const float top = 158.0f, bot = 250.0f, lo = -40.0f, hi = 3.0f, mx = px + 190.0f;
-            auto yOf = [&] (float db) { return juce::jmap (juce::jlimit (lo, hi, db), lo, hi, bot, top); };
-            auto toDb = [] (float a) { return a > 1.0e-5f ? 20.0f * std::log10 (a) : -100.0f; };
-            for (int c = 0; c < 2; ++c)
+            const float x = px + 98.0f + 16.0f * (float) c;
+            const float lvl = toDb (meter[c]), hold = toDb (peakHold[c]);
+            const int lit = (int) std::floor ((juce::jlimit (lo, hi, lvl) - lo) / (hi - lo) * (float) nSeg + 0.5f);
+            const int holdSeg = (int) std::floor ((juce::jlimit (lo, hi, hold) - lo) / (hi - lo) * (float) nSeg - 0.5f);
+            for (int i = 0; i < nSeg; ++i)
             {
-                const float x = mx + 15.0f * (float) c;
-                g.setColour (juce::Colours::black.withAlpha (0.6f));
-                g.fillRect (x, top, 12.0f, bot - top);
-                const float lvl = toDb (meter[c]);
-                if (lvl > lo)
-                {
-                    const float y = yOf (lvl);
-                    juce::ColourGradient grad (juce::Colour (0xffff3030), 0.0f, yOf (0.0f), juce::Colour (0xff4cd964), 0.0f, yOf (-18.0f), false);
-                    grad.addColour (0.5, juce::Colour (0xffffc040));
-                    g.setGradientFill (grad);
-                    g.fillRect (x, y, 12.0f, bot - y);
-                }
-                const float h = toDb (peakHold[c]);
-                if (h > lo) { g.setColour (h > -1.0f ? juce::Colour (0xffff3030) : print); g.fillRect (x, yOf (h) - 1.0f, 12.0f, 2.0f); }
+                const auto col = i >= 18 ? red : i >= 14 ? juce::Colour (0xffffb020) : green;
+                const bool on = (i < lit && lvl > lo) || (i == holdSeg && hold > lo);
+                g.setColour (on ? col : col.withAlpha (0.12f));
+                g.fillRoundedRectangle (x, top + (float) (nSeg - 1 - i) * step, 12.0f, segH, 1.0f);
             }
-            g.setFont (labelFont (8.0f, false));
-            for (float db : { 0.0f, -6.0f, -12.0f, -24.0f, -40.0f })
-            {
-                g.setColour (db == 0.0f ? juce::Colour (0xffff6060) : printDim);
-                g.drawText (juce::String ((int) db), juce::Rectangle<float> (mx - 32.0f, yOf (db) - 5.0f, 26.0f, 10.0f), juce::Justification::centredRight);
-                g.fillRect (mx - 4.0f, yOf (db), 3.0f, 1.0f);
-            }
-            g.setColour (printDim);
-            g.setFont (labelFont (8.0f, true, 0.1f));
-            g.drawText ("L      R", juce::Rectangle<float> (mx - 4.0f, top - 13.0f, 35.0f, 10.0f), juce::Justification::centred);
-            const float pk = toDb (std::max (peakHold[0], peakHold[1]));
-            g.setFont (labelFont (9.0f, true));
-            g.setColour (clipTicks > 0 ? juce::Colour (0xffff3030) : printDim);
-            g.drawText (clipTicks > 0 ? juce::String ("LIMIT") : pk <= -99.0f ? juce::String ("-INF") : juce::String (pk, 1) + " dB",
-                        juce::Rectangle<float> (mx + 34.0f, 240.0f, 60.0f, 12.0f), juce::Justification::centredLeft);
-            g.setColour (printDim);
-            g.setFont (labelFont (8.0f, true, 0.1f));
-            g.drawText ("PEAK", juce::Rectangle<float> (mx + 34.0f, 226.0f, 60.0f, 12.0f), juce::Justification::centredLeft);
         }
-        g.setFont (labelFont (9.0f, true, 0.1f));
-        g.drawText ("WIKI", juce::Rectangle<float> (px + 234.0f, 323.0f, 60.0f, 12.0f), juce::Justification::centred);
+        g.setColour (printFaint);
+        g.setFont (labelFont (8.0f, true, 0.1f));
+        g.drawText ("L", juce::Rectangle<float> (px + 98.0f, 260.0f, 12.0f, 10.0f), juce::Justification::centred);
+        g.drawText ("R", juce::Rectangle<float> (px + 114.0f, 260.0f, 12.0f, 10.0f), juce::Justification::centred);
+    }
+    g.setColour (printFaint);
+    g.setFont (labelFont (9.0f, true, 0.14f));
+    g.drawText ("FX SUR", juce::Rectangle<float> (px + 147.0f, 158.0f, 120.0f, 12.0f), juce::Justification::centredLeft);
+    {
+        auto toDb = [] (float a) { return a > 1.0e-5f ? 20.0f * std::log10 (a) : -100.0f; };
+        const float pk = toDb (std::max (peakHold[0], peakHold[1]));
+        g.setColour (clipTicks > 0 ? red : printDim);
+        g.setFont (monoFont (9.5f));
+        g.drawText (clipTicks > 0 ? juce::String ("LIMIT") : "PEAK " + (pk <= -99.0f ? juce::String ("-INF") : juce::String (pk, 1)),
+                    juce::Rectangle<float> (px + 147.0f, 252.0f, 137.0f, 12.0f), juce::Justification::centredLeft);
     }
 }

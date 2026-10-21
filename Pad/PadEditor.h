@@ -7,6 +7,8 @@
 class PadLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    PadLookAndFeel();
+    juce::Typeface::Ptr getTypefaceForFont (const juce::Font&) override;
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float start, float end, juce::Slider&) override;
     void drawLinearSlider (juce::Graphics&, int x, int y, int w, int h, float pos, float, float, juce::Slider::SliderStyle, juce::Slider&) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
@@ -62,10 +64,10 @@ private:
     std::vector<std::unique_ptr<PadButton>> pads;
     std::array<juce::Slider, 8> knobs;
     juce::TextButton progBtn { "PROGRAM" }, noteBtn { "NOTE" }, pcBtn { "PROG CHNG" }, ccBtn { "CC" },
-                     setupBtn { "SETUP LPD8" }, helpBtn { "?" }, targetBtn { "FX : MUSIQUE + SONS" };
+                     setupBtn { "SETUP LPD8" }, helpBtn { "WIKI" },
+                     fxMusicBtn { "MUSIQUE + SONS" }, fxOnlyBtn { "SONS SEULS" };
     juce::Slider bpmSlider, masterKnob, offsetSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt, masterAtt, offsetAtt;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> targetAtt;
     UpdateBanner updateBanner;
     Help help;
     bool programSelectMode = false;

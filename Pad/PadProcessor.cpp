@@ -232,7 +232,7 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
     const int ch = m.getChannel();
     if (m.isProgramChange())
     {
-        if (learnStep.load() == 7) { pcBase.store (m.getProgramChangeNumber()); program.store (2); learnStep.store (0); setEvent ("SETUP OK"); return; }
+        if (learnStep.load() == 9) { pcBase.store (m.getProgramChangeNumber()); program.store (2); learnStep.store (0); setEvent ("SETUP OK"); return; }
         // pads in PROG CHNG mode: steps 9-16 of the Pattern Player (program 3)
         const auto& m3 = maps[2];
         if (m3.learned && ch == m3.padChannel) program.store (2);
@@ -258,7 +258,7 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
 
     // ---- LPD8 setup: learn where each program sends its pads and knobs ----
     const int step = learnStep.load();
-    if (step == 7) return;   // waiting for a Program Change (PROG CHNG + PAD 1)
+    if (step == 9) return;   // waiting for a Program Change (PROG CHNG + PAD 1)
     if (step > 0)
     {
         auto& mp = maps[(size_t) ((step - 1) / 2)];
@@ -266,7 +266,7 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
         if ((step % 2 == 0) && m.isController())
         {
             mp.knobChannel = ch; mp.knobCC0 = m.getControllerNumber(); mp.learned = true;
-            learnStep.store (step + 1);   // after 6: PROG CHNG pad 1 of program 3
+            learnStep.store (step + 1);   // after 8: PROG CHNG pad 1 of program 3
             return;
         }
         return;
@@ -314,19 +314,35 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
     padDown[(size_t) pad].store (down);
     if (down) padHit[(size_t) pad].store (uiTime());
 
-    // pads 5 + 8 together = KILL FX (in any program)
-    if (down && (pad == 4 || pad == 7))
+    // two pads together (any program): PAD 5 + PAD 8 = KILL FX, PAD 6 + PAD 7 = FX on music + sounds / sounds only
+    if (down && pad >= 4)
     {
         const double now = (double) sampleCounter / fs;
-        if (now - std::max (lastPad5Time, lastPad8Time) > 0.15) { soundBeforeCombo = apvts.getRawParameterValue (id::sound)->load(); activeBeforeCombo = activeSound.load(); stepsBeforeCombo = ppSteps.load(); }
-        (pad == 4 ? lastPad5Time : lastPad8Time) = now;
-        if (std::abs (lastPad5Time - lastPad8Time) < 0.15)
+        if (now - lastComboPress > 0.15)   // first pad of a possible combo: remember what it is about to change
         {
-            if (prog == 0) { setParam (apvts, id::sound, soundBeforeCombo); activeSound.store (activeBeforeCombo); }   // the combo is not a sound choice
-            if (prog == 2) ppSteps.store (stepsBeforeCombo);                                                        // nor a step edit
-            doKill();
-            return;
+            soundBeforeCombo = apvts.getRawParameterValue (id::sound)->load(); activeBeforeCombo = activeSound.load();
+            stepsBeforeCombo = ppSteps.load();
+            tremBeforeCombo = brumeEngine.apvts.getRawParameterValue (brume::id::tremolo)->load();
         }
+        lastComboPress = now;
+        comboTime[(size_t) pad] = now;
+        auto pair = [&] (int a, int b) { return (pad == a || pad == b) && std::abs (comboTime[(size_t) a] - comboTime[(size_t) b]) < 0.15; };
+        auto restore = [&]   // the first pad of the combo is not a choice
+        {
+            if (prog == 0) { setParam (apvts, id::sound, soundBeforeCombo); activeSound.store (activeBeforeCombo); }
+            if (prog == 1) setParam (brumeEngine.apvts, brume::id::tremolo, tremBeforeCombo);
+            if (prog == 2) ppSteps.store (stepsBeforeCombo);
+        };
+        if (pair (4, 7)) { restore(); doKill(); comboTime.fill (-10.0); return; }
+        if (pair (5, 6)) { restore(); toggleFxTarget(); comboTime.fill (-10.0); return; }
+    }
+
+    if (prog == 3)   // GLOBAL page
+    {
+        if (! down) return;
+        if (pad == 4) { setParam (apvts, id::fxTarget, 0.0f); setEvent ("FX : MUSIQUE + SONS"); }
+        if (pad == 5) { setParam (apvts, id::fxTarget, 1.0f); setEvent ("FX : SONS SEULS"); }
+        return;
     }
 
     if (prog == 0)
@@ -385,9 +401,17 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
 
 void PadProcessor::handleKnob (int prog, int knob, float v)
 {
-    if (prog == 0) setParam (apvts, p1KnobId (knob), v);
+    if (prog == 0) setParam (apvts, p1KnobId (p1Slot (knob)), v);
     else if (prog == 1) setParam (brumeEngine.apvts, p2KnobId (knob), v);
     else if (prog == 2) setParam (apvts, p3KnobId (knob), v);
+    else if (prog == 3 && knob == 0) setParam (apvts, id::master, v);
+}
+
+void PadProcessor::toggleFxTarget()
+{
+    const bool soundsOnly = ! isSoundsOnly();
+    setParam (apvts, id::fxTarget, soundsOnly ? 1.0f : 0.0f);
+    setEvent (soundsOnly ? "FX : SONS SEULS" : "FX : MUSIQUE + SONS");
 }
 
 void PadProcessor::doKill()
@@ -641,7 +665,8 @@ float PadProcessor::getKillFlash() const
 
 float PadProcessor::getKnobValue (int prog, int k) const
 {
-    if (prog == 0) return apvts.getRawParameterValue (p1KnobId (k))->load();
+    if (prog == 0) return apvts.getRawParameterValue (p1KnobId (p1Slot (k)))->load();
+    if (prog == 3) return k == 0 ? apvts.getRawParameterValue (id::master)->load() : 0.0f;
     if (prog == 1) if (auto* p = brumeEngine.apvts.getParameter (p2KnobId (k))) return p->getValue();
     if (prog == 2) return apvts.getRawParameterValue (p3KnobId (k))->load();
     return 0.0f;
@@ -649,7 +674,13 @@ float PadProcessor::getKnobValue (int prog, int k) const
 
 juce::String PadProcessor::getKnobText (int prog, int k) const
 {
-    if (prog == 0) if (auto* p = apvts.getParameter (p1KnobId (k))) return p->getCurrentValueAsText();
+    if (prog == 0) if (auto* p = apvts.getParameter (p1KnobId (p1Slot (k)))) return p->getCurrentValueAsText();
+    if (prog == 3)
+    {
+        if (k != 0) return {};
+        const float db = masterDb (apvts.getRawParameterValue (id::master)->load());
+        return db <= -99.0f ? juce::String ("-INF") : (db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB";
+    }
     if (prog == 1 && k == 6) { const float hz = brume::tremoloRateHz (brumeEngine.apvts.getRawParameterValue (brume::id::tempo)->load()); return juce::String (hz, hz < 10.0f ? 2 : 1) + " Hz"; }
     if (prog == 1) if (auto* p = brumeEngine.apvts.getParameter (p2KnobId (k))) return p->getCurrentValueAsText();
     if (prog == 2) if (auto* p = apvts.getParameter (p3KnobId (k))) return p->getCurrentValueAsText();
