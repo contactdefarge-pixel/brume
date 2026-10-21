@@ -45,7 +45,9 @@ class BrumeProcessor : public juce::AudioProcessor,
                        private juce::Timer
 {
 public:
-    BrumeProcessor();
+    // embedded = used inside Brume Pad (no F1 reader, no timer); revoloNoise = noise voiced like the Teile Revolo
+    explicit BrumeProcessor (bool embedded = false);
+    void setRevoloNoise (bool r) { revoloNoise = r; }
     ~BrumeProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -146,6 +148,7 @@ private:
     std::atomic<float> tremPhaseUi { 0.0f };
     std::atomic<bool> tapReset { false };
     juce::Random noiseRandom;
+    bool revoloNoise = false;
 
     // tap tempo (message thread)
     juce::Array<double> taps;

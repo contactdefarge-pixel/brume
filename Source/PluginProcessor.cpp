@@ -23,7 +23,7 @@ namespace
 }
 
 //==============================================================================
-BrumeProcessor::BrumeProcessor()
+BrumeProcessor::BrumeProcessor (bool embedded)
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
@@ -42,6 +42,7 @@ BrumeProcessor::BrumeProcessor()
     pOn        = apvts.getRawParameterValue (id::on);
 
     for (auto& m : midiMap) m.store (-1);
+    if (embedded) return;
     startTimerHz (20);
     if (juce::JUCEApplicationBase::isStandaloneApp())
         f1Reader.start();
@@ -151,8 +152,9 @@ void BrumeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     setup (preHP,    juce::dsp::IIR::Coefficients<float>::makeHighPass (fs, 160.0f, 0.707f));
     setup (airShelf, juce::dsp::IIR::Coefficients<float>::makeHighShelf (fs, 2400.0f, 0.707f, 1.0f));
     setup (lowCut,   juce::dsp::IIR::Coefficients<float>::makeHighPass (fs, 160.0f, 1.1f));
-    setup (noiseHP,  juce::dsp::IIR::Coefficients<float>::makeHighPass (fs, 35.0f, 0.707f));
-    setup (noiseLP,  juce::dsp::IIR::Coefficients<float>::makeLowPass (fs, std::min (17000.0, fs * 0.45), 0.707f));
+    // Revolo voicing (measured on recordings of the pedal): flat 160 Hz - 8 kHz, rolled off below ~170 Hz and above ~10 kHz
+    setup (noiseHP,  juce::dsp::IIR::Coefficients<float>::makeHighPass (fs, revoloNoise ? 130.0f : 35.0f, 0.707f));
+    setup (noiseLP,  juce::dsp::IIR::Coefficients<float>::makeLowPass (fs, std::min (revoloNoise ? 13500.0 : 17000.0, fs * 0.45), 0.707f));
 
     sendBuf.setSize (2, maxBlock);
     noiseBuf.setSize (2, maxBlock);
@@ -310,8 +312,10 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
 
         // white noise, partly shared between L and R (correlation ~0.5)
         const float common = noiseRandom.nextFloat() * 2.0f - 1.0f;
-        const float a = (common * 0.71f + (noiseRandom.nextFloat() * 2.0f - 1.0f) * 0.71f) * 0.5f;
-        const float b = (common * 0.71f + (noiseRandom.nextFloat() * 2.0f - 1.0f) * 0.71f) * 0.5f;
+        // Brume: L/R correlation ~0.5; Revolo: nearly independent channels (~0.15), a wide wash
+        const float wc = revoloNoise ? 0.38f : 0.71f, wi = revoloNoise ? 0.92f : 0.71f;
+        const float a = (common * wc + (noiseRandom.nextFloat() * 2.0f - 1.0f) * wi) * 0.5f;
+        const float b = (common * wc + (noiseRandom.nextFloat() * 2.0f - 1.0f) * wi) * 0.5f;
         const float ng = noiseAmt * noiseGate;
         nL[i] = noiseLP[0].processSample (noiseHP[0].processSample (a)) * ng;
         nR[i] = noiseLP[1].processSample (noiseHP[1].processSample (b)) * ng;
@@ -551,5 +555,7 @@ void BrumeProcessor::setStateInformation (const void* data, int sizeInBytes)
 juce::AudioProcessorEditor* BrumeProcessor::createEditor() { return new BrumeEditor (*this); }
 
 #if ! BRUME_TEST
+#ifndef BRUME_EMBEDDED
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new BrumeProcessor(); }
+#endif
 #endif

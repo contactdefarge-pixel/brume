@@ -51,21 +51,19 @@ Sans horloge, TEMPO et TAP reviennent en mode libre (Hz). Dans Ableton, Brume su
 Une version autonome (Brume.exe / Brume.app) est fournie pour tester sans Ableton.
 
 ================================
-BRUME STATION - l'appli de performance pour la Traktor Kontrol F1
+BRUME PAD - Akai LPD8 MK2 façon RMX-1000 (X-PAD + effets + bruit blanc du Revolo)
 ================================
-INSTALLATION (Mac) : glisser "Brume Station.app" dans Applications (même archive que Brume,
-même commande xattr). Ensuite, les mises à jour de l'une mettent aussi l'autre à jour.
-Pour Ableton : "Brume Station.vst3" / "Brume Station.component" comme pour Brume (c'est un instrument).
+INSTALLATION (Mac) : glisser "Brume Pad.app" dans Applications, puis :
+   xattr -dr com.apple.quarantine "/Applications/Brume Pad.app"
+Pour Ableton : "Brume Pad.vst3" / "Brume Pad.component" comme pour Brume (effet avec entrée MIDI).
 
-LA F1 ENTIÈREMENT POUR BRUME STATION (pads en couleur, écran)
-Traktor > Préférences > Controller Manager : supprimer (ou désactiver) l'appareil "Traktor Kontrol F1".
-Traktor reste piloté par la X1 et la Z1. En haut à droite de Brume Station : "F1 CONNECTED".
-
-FONCTIONNEMENT : tout est expliqué dans l'app (bouton "?" en bas à droite = WIKI).
-En bref : SHIFT + pad 1 à 5 choisit le programme (BRUME, ROLL, PATTERNS, PAD, FX), qui prend alors
-les 4 boutons rotatifs, les 16 pads et l'encodeur. Les 4 faders (volumes) et les 4 STOP (marche/arrêt)
-restent fixes. TYPE = DROP, CAPTURE = HOLD (roulements verrouillés), SIZE = programme suivant.
-
-SYNCHRO TRAKTOR : comme pour Brume (Traktor Virtual Output + horloge MIDI), puis dans Brume Station :
-Options > Audio/MIDI Settings > cocher "Traktor Virtual Output". Sortie audio : vers Traktor via BlackHole
-(deck en Live Input) ou directement sur la sortie de votre carte son.
+Tout le fonctionnement est expliqué dans l'app : bouton "?" (WIKI) en bas à droite.
+En bref :
+- La musique de Traktor passe dans Brume Pad : Traktor (Master sur BlackHole) -> Brume Pad (Input BlackHole,
+  Output = ta carte son / enceintes).
+- Programme 1 (PROGRAM + PAD 1) : PAD 5-8 = KICK SNARE CLAP HAT, PAD 1-4 = roulement 1/4 1/8 1/16 1/32 (tenir),
+  K1 volume batterie, K2 pitch, K3 delay court/long, K4 reverb, K5 HPF echo, K6 LPF echo, K7 crush echo, K8 bruit blanc.
+- Programme 2 (PROGRAM + PAD 2) : Brume (ON/OFF, TAP, trémolo sur les pads ; réglages sur les boutons).
+- KILL FX : CC puis un pad, ou PAD 5 + PAD 8 ensemble, ou le bouton CC à l'écran. Les queues restent.
+- SETUP LPD8 (une fois) : pour que l'app reconnaisse tout seule le programme du LPD8.
+- Synchro : Traktor envoie son horloge MIDI sur "Traktor Virtual Output", ouvert automatiquement par l'app.

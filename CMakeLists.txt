@@ -97,39 +97,44 @@ target_link_libraries(Brume
         BrumeAssets)
 
 # ---------------------------------------------------------------------------
-# Brume Station: the F1 performance app (Brume, snare, patterns, chord pad), same repo and release archive
-juce_add_plugin(BrumeStation
+# Brume Pad: an Akai LPD8 MK2 as an RMX-1000 style box (X-PAD drums + effects, Brume white noise), same release archive
+juce_add_plugin(BrumePad
     COMPANY_NAME "Brume Audio"
-    BUNDLE_ID "audio.brume.station"
+    BUNDLE_ID "audio.brume.pad"
     PLUGIN_MANUFACTURER_CODE Brum
-    PLUGIN_CODE Brm2
+    PLUGIN_CODE Brm3
     FORMATS ${BRUME_FORMATS}
-    PRODUCT_NAME "Brume Station"
-    ICON_BIG Resources/icon-station.png
-    IS_SYNTH TRUE
+    PRODUCT_NAME "Brume Pad"
+    ICON_BIG Resources/icon-pad.png
+    IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE
-    VST3_CATEGORIES Instrument Generator
-    AU_MAIN_TYPE kAudioUnitType_MusicDevice)
+    VST3_CATEGORIES Fx
+    AU_MAIN_TYPE kAudioUnitType_MusicEffect
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Brume Pad a besoin de l'entree audio pour traiter le son de Traktor (BlackHole).")
 
-target_sources(BrumeStation PRIVATE
-    Station/StationProcessor.cpp
-    Station/StationEditor.cpp
+target_sources(BrumePad PRIVATE
+    Pad/PadProcessor.cpp
+    Pad/PadEditor.cpp
+    Source/PluginProcessor.cpp
+    Source/PluginEditor.cpp
     Source/Updater.cpp
     Source/F1Reader.cpp)
-brume_add_hidapi(BrumeStation)
+brume_add_hidapi(BrumePad)
 if(APPLE AND DEFINED ENV{BRUME_UPDATE_TOKEN} AND NOT "$ENV{BRUME_UPDATE_TOKEN}" STREQUAL "")
-    target_compile_definitions(BrumeStation PRIVATE BRUME_UPDATE_TOKEN="$ENV{BRUME_UPDATE_TOKEN}")
+    target_compile_definitions(BrumePad PRIVATE BRUME_UPDATE_TOKEN="$ENV{BRUME_UPDATE_TOKEN}")
 endif()
-target_compile_definitions(BrumeStation PUBLIC
+target_compile_definitions(BrumePad PUBLIC
+    BRUME_EMBEDDED=1
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0)
-target_link_libraries(BrumeStation
+target_link_libraries(BrumePad
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
@@ -148,9 +153,9 @@ if(BRUME_BUILD_TESTS)
     target_compile_definitions(BrumeTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(BrumeTest PRIVATE BrumeAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
 
-    juce_add_console_app(StationTest PRODUCT_NAME "StationTest")
-    target_sources(StationTest PRIVATE Tests/StationTest.cpp Station/StationProcessor.cpp Station/StationEditor.cpp Source/Updater.cpp Source/F1Reader.cpp)
-    brume_add_hidapi(StationTest)
-    target_compile_definitions(StationTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
-    target_link_libraries(StationTest PRIVATE BrumeAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
+    juce_add_console_app(PadTest PRODUCT_NAME "PadTest")
+    target_sources(PadTest PRIVATE Tests/PadTest.cpp Pad/PadProcessor.cpp Pad/PadEditor.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Updater.cpp Source/F1Reader.cpp)
+    brume_add_hidapi(PadTest)
+    target_compile_definitions(PadTest PRIVATE BRUME_EMBEDDED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(PadTest PRIVATE BrumeAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
 endif()
