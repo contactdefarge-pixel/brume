@@ -19,6 +19,7 @@ PadProcessor::PadProcessor()
 {
     brumeEngine.setRevoloNoise (true);
     brumeEngine.setSlowNoiseDown (true);
+    brumeEngine.setPlayHead (&brumeHead);
     for (auto& d : padDown) d.store (false);
     for (auto& h : padHit) h.store (-10.0);
     for (auto& k : fxKilledUi) k.store (false);
@@ -70,6 +71,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PadProcessor::createLayout()
     ps.push_back (std::make_unique<F> (juce::ParameterID { id::bpm, 1 }, "Tempo (no sync)", juce::NormalisableRange<float> (60.0f, 200.0f, 0.1f), 124.0f,
                                        A().withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " BPM"; })));
     add (id::master, "Master", 0.8f, pct);
+    ps.push_back (std::make_unique<F> (juce::ParameterID { id::syncOffset, 1 }, "Sync Offset", juce::NormalisableRange<float> (-60.0f, 60.0f, 1.0f), 0.0f,
+                                       A().withStringFromValueFunction ([] (float v, int) { return (v > 0 ? "+" : "") + juce::String (juce::roundToInt (v)) + " ms"; })));
     return { ps.begin(), ps.end() };
 }
 
@@ -348,13 +351,17 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     {
         src = 1;
         bpm = fs * 60.0 / (clockTickSamples * 24.0);
-        target = (clockTicks + (double) (blockStart - lastClockSample) / clockTickSamples) / 24.0;
+        target = (clockTicks + (double) (blockStart - lastClockSample) / clockTickSamples) / 24.0
+               + apvts.getRawParameterValue (id::syncOffset)->load() * 0.001 * bpm / 60.0;
     }
    #if BRUME_HAS_LINK
     else if (link != nullptr && linkPeers.load() > 0)
     {
-        // beat at the moment this block will be heard (block length as an estimate of the output latency)
-        const auto t = link->clock().micros() + std::chrono::microseconds ((long long) (1.0e6 * n / fs));
+        // Traktor's music reaches us through BlackHole one input buffer late, and leaves with our drums through
+        // the same output: so the drums follow the beat of the music arriving now (now - input buffer), plus the
+        // user's fine tuning (SYNC OFFSET, + = drums later)
+        const double offsetMs = apvts.getRawParameterValue (id::syncOffset)->load();
+        const auto t = link->clock().micros() - std::chrono::microseconds ((long long) (1.0e6 * n / fs + 2000.0 - offsetMs * 1000.0));
         const auto session = link->captureAudioSessionState();
         src = 3; bpm = session.tempo(); target = session.beatAtTime (t, 4.0);
     }
@@ -418,6 +425,7 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     }
 
     // ---- 2) program 2: Brume (noise voiced like the Revolo, reverb, tremolo), synced on the same clock ----
+    brumeHead.bpm.store (bpm); brumeHead.ppq.store (beatAtStart); brumeHead.playing.store (src == 3);   // Link -> Brume's tremolo
     brumeEngine.processBlock (buffer, clockForBrume);
 
     // ---- 3) program 1: DJM-V10 style send effects (SHORT DELAY, LONG DELAY, DUB ECHO, REVERB) ----

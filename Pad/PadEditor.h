@@ -63,8 +63,8 @@ private:
     std::array<juce::Slider, 8> knobs;
     juce::TextButton progBtn { "PROGRAM" }, noteBtn { "NOTE" }, pcBtn { "PROG CHNG" }, ccBtn { "CC" },
                      setupBtn { "SETUP LPD8" }, helpBtn { "?" };
-    juce::Slider bpmSlider, masterKnob;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt, masterAtt;
+    juce::Slider bpmSlider, masterKnob, offsetSlider;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt, masterAtt, offsetAtt;
     UpdateBanner updateBanner;
     Help help;
     bool programSelectMode = false;

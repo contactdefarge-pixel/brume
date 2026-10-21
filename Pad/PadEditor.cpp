@@ -155,6 +155,8 @@ namespace
 "   2. Traktor > Préférences > External Sync : cocher Enable MIDI Clock.\n"
 "   3. Dans Traktor, panneau Master Clock (métronome) : lancer l'horloge.\n"
 "   Brume Pad ouvre Traktor Virtual Output tout seul. En bas : SYNC MIDI CLOCK et le tempo.\n\n"
+"   CALAGE FIN : si les roulements arrivent un peu avant ou après le temps de la musique, régler SYNC OFFSET "
+"en bas (+ = roulements plus tard, - = plus tôt ; double-clic = 0). Ne pas décaler le morceau dans Traktor.\n\n"
 "SON (la musique passe dans Brume Pad)\n"
 "   - Traktor > Préférences > Audio Setup : un périphérique agrégé (carte son ou enceintes du Mac + BlackHole 2ch), "
 "Output Routing : Master sur les canaux de BlackHole (les casques restent sur ta carte son).\n"
@@ -358,6 +360,11 @@ PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p
     bpmSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     body.addAndMakeVisible (bpmSlider);
     bpmAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id::bpm, bpmSlider);
+    offsetSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    offsetSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    offsetSlider.setDoubleClickReturnValue (true, 0.0);
+    body.addAndMakeVisible (offsetSlider);
+    offsetAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id::syncOffset, offsetSlider);
     masterKnob.setSliderStyle (juce::Slider::RotaryVerticalDrag);
     masterKnob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     masterKnob.setRotaryParameters (juce::degreesToRadians (-140.0f), juce::degreesToRadians (140.0f), true);
@@ -390,7 +397,8 @@ void PadEditor::layoutBody()
     pcBtn.setBounds (44, 262, 84, 40);
     ccBtn.setBounds (136, 262, 84, 40);
     // strip under the controller
-    setupBtn.setBounds (560, 404, 120, 34);
+    setupBtn.setBounds (430, 404, 110, 34);
+    offsetSlider.setBounds (556, 408, 130, 24);
     bpmSlider.setBounds (700, 408, 150, 24);
     masterKnob.setBounds (870, 396, 46, 46);
     helpBtn.setBounds (1000, 402, 40, 40);
@@ -546,14 +554,15 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.setColour (print.withAlpha (0.8f));
         const int peers = proc.getLinkPeers();
         g.drawText (proc.getMidiStatus() + "   LINK " + (peers > 0 ? juce::String (peers) + " PEER" + (peers > 1 ? "S" : "") : juce::String ("WAITING")),
-                    juce::Rectangle<float> (32.0f, 402.0f, 520.0f, 18.0f), juce::Justification::centredLeft);
+                    juce::Rectangle<float> (32.0f, 402.0f, 390.0f, 18.0f), juce::Justification::centredLeft);
         g.setColour (printDim);
         const auto ev = proc.getLastEvent();
         g.drawText ((ev.isNotEmpty() ? ev + "    " : juce::String()) + "V" + Updater::currentVersion(),
-                    juce::Rectangle<float> (32.0f, 426.0f, 520.0f, 18.0f), juce::Justification::centredLeft);
+                    juce::Rectangle<float> (32.0f, 426.0f, 390.0f, 18.0f), juce::Justification::centredLeft);
         g.setFont (labelFont (9.0f, true, 0.1f));
         g.drawText ("TEMPO " + juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1) + " (NO SYNC)", juce::Rectangle<float> (700.0f, 434.0f, 150.0f, 12.0f), juce::Justification::centred);
         g.drawText ("MASTER", juce::Rectangle<float> (853.0f, 442.0f, 80.0f, 12.0f), juce::Justification::centred);
+        g.drawText ("SYNC OFFSET " + proc.apvts.getParameter (id::syncOffset)->getCurrentValueAsText(), juce::Rectangle<float> (546.0f, 434.0f, 150.0f, 12.0f), juce::Justification::centred);
         g.drawText ("WIKI", juce::Rectangle<float> (990.0f, 444.0f, 60.0f, 12.0f), juce::Justification::centred);
     }
 }

@@ -29,6 +29,7 @@ namespace bpad
         static constexpr const char* size = "p1_size_feedback";     static constexpr const char* time = "p1_time";
         static constexpr const char* sound = "p1_sound";
         static constexpr const char* bpm = "bpm";          static constexpr const char* master = "master";
+        static constexpr const char* syncOffset = "sync_offset";   // ms, fine tuning of the drums against the music
     }
     inline const char* p1KnobId (int k)
     {
@@ -169,6 +170,16 @@ private:
     std::atomic<float> bpmUi { 124.0f }, barBeatUi { 0.0f };
     juce::Array<double> taps;
     juce::MidiBuffer clockForBrume;
+    // gives the embedded Brume our tempo and beat (so its tremolo follows Link too)
+    struct BeatPlayHead : public juce::AudioPlayHead
+    {
+        std::atomic<double> bpm { 124.0 }, ppq { 0.0 }; std::atomic<bool> playing { false };
+        juce::Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo p; p.setIsPlaying (playing.load()); p.setBpm (bpm.load()); p.setPpqPosition (ppq.load());
+            return p;
+        }
+    } brumeHead;
     std::atomic<int> linkPeers { 0 };
    #if BRUME_HAS_LINK
     std::unique_ptr<ableton::Link> link;
