@@ -30,7 +30,10 @@ namespace bpad
         static constexpr const char* sound = "p1_sound";
         static constexpr const char* bpm = "bpm";          static constexpr const char* master = "master";
         static constexpr const char* syncOffset = "sync_offset";   // ms, fine tuning of the drums against the music
-        static constexpr const char* fxTarget = "fx_target";       // off = effects on the music + our sounds, on = our sounds only
+        // FX SOURCE (like the RMX-1000): what goes into the effects; a source that is off passes dry
+        static constexpr const char* fxInput = "fx_src_input";     // the music coming in
+        static constexpr const char* fxHydra = "fx_src_hydra";     // Hydra's own sounds (X-PAD, pattern)
+        static constexpr const char* lpf = "p1_lpf";
         // program 3: Pattern Player
         static constexpr const char* ppVolume = "p3_volume"; static constexpr const char* ppPitch = "p3_pitch";
         static constexpr const char* ppDecay = "p3_decay";   static constexpr const char* ppDuck = "p3_duck";
@@ -41,8 +44,8 @@ namespace bpad
     inline int p1Slot (int k) { static const int s[] = { 0, 1, 2, 3, 6, 7, 4, 5 }; return s[juce::jlimit (0, 7, k)]; }
     inline const char* p1KnobId (int k)   // k = function slot
     {
-        static const char* ids[] = { id::drums, id::pitch, id::shortDelay, id::longDelay, id::dubEcho, id::reverb, id::size, id::time };
-        return ids[juce::jlimit (0, 7, k)];
+        static const char* ids[] = { id::drums, id::pitch, id::lpf, id::longDelay, id::dubEcho, id::reverb, id::size, id::time, id::shortDelay };
+        return ids[juce::jlimit (0, 8, k)];
     }
     // Brume parameters on the knobs of program 2 (same order as the pedal)
     inline const char* p2KnobId (int k)
@@ -61,8 +64,8 @@ namespace bpad
     {
         static const char* p3[] = { "VOLUME", "PITCH", "DECAY", "DUCK", "KIT", "SOUND", "PATTERN", "SWING" };
         if (prog == 2) return p3[k];
-        if (prog == 3) return k == 0 ? "MASTER" : "";
-        static const char* p1[] = { "DRUMS VOL", "PITCH", "SHORT DELAY", "LONG DELAY", "DUB ECHO", "REVERB", "SIZE / FB", "TIME" };
+        if (prog == 3) return k == 0 ? "MASTER" : k == 1 ? "SHORT DELAY" : "";
+        static const char* p1[] = { "DRUMS VOL", "PITCH", "LPF", "LONG DELAY", "DUB ECHO", "REVERB", "SIZE / FB", "TIME" };
         static const char* p2[] = { "REVERB", "CHARACTER", "LENGTH", "AIR", "NOISE", "TREMOLO", "TEMPO", "FILTER" };
         if (prog == 0) return p1[p1Slot (k)];
         if (prog == 1) return p2[k];
@@ -72,9 +75,9 @@ namespace bpad
     inline const char* padLabel (int prog, int pad)
     {
         static const char* p1[] = { "1/4", "1/8", "1/16", "1/32", "KICK", "SNARE", "CLAP", "HAT" };
-        static const char* p2[] = { "", "", "", "", "ON / OFF", "TAP", "TREM ON", "HOLD" };   // bottom row unused
+        static const char* p2[] = { "", "", "", "", "ON / OFF", "TAP", "", "HOLD" };   // bottom row unused
         if (prog == 0) return p1[pad];
-        static const char* p4[] = { "", "", "", "", "FX : MUSIQUE + SONS", "FX : SONS SEULS", "", "" };
+        static const char* p4[] = { "", "", "", "", "FX SOURCE INPUT", "FX SOURCE HYDRA", "", "" };
         if (prog == 1) return p2[pad];
         if (prog == 3) return p4[pad];
         return "-";
@@ -153,7 +156,8 @@ public:
     int   getPatternPage() const      { return ppPage.load(); }      // 0 = steps 1-8 (NOTE), 1 = steps 9-16 (PROG CHNG)
     void  setPatternPage (int p)      { ppPage.store (juce::jlimit (0, 1, p)); }
     int   getPatternPlayStep() const  { return ppPlayStep.load(); }
-    bool  isSoundsOnly() const        { return apvts.getRawParameterValue (bpad::id::fxTarget)->load() > 0.5f; }
+    bool  fxInputOn() const           { return apvts.getRawParameterValue (bpad::id::fxInput)->load() > 0.5f; }
+    bool  fxHydraOn() const           { return apvts.getRawParameterValue (bpad::id::fxHydra)->load() > 0.5f; }
     int   getActiveSpeed() const      { return activeSpeed.load(); }
 
 private:
@@ -164,7 +168,7 @@ private:
     void handlePad (int prog, int pad, bool down, float velocity);
     void handleKnob (int prog, int knob, float v);
     void doKill();
-    void toggleFxTarget();
+    void toggleSource (const char* pid);
     void setParam (juce::AudioProcessorValueTreeState& t, const char* pid, float v);
     void triggerSound (int sound, float vel, float gateSeconds = 10.0f);
     void setEvent (const juce::String& s) { const juce::ScopedLock sl (eventLock); lastEvent = s; }
@@ -185,11 +189,10 @@ private:
     int activeBeforeCombo = -1;
     juce::int64 lastRollIdx = -1; float lastRollRate = 0.0f;
     std::array<double, 8> comboTime { -10, -10, -10, -10, -10, -10, -10, -10 }; double lastComboPress = -10.0;
-    float tremBeforeCombo = 0.0f;
     float soundBeforeCombo = 1.0f / 3.0f;
 
     // effects (program 1)
-    std::array<pad::FxKnob, 8> fx;   // indices = knobs; 2-5 are the sends (KILL acts on them)
+    std::array<pad::FxKnob, 9> fx;   // indices = function slots (p1KnobId); 2 LPF, 3-5 + 8 the sends (KILL acts on them)
     pad::Echo shortFx, longFx, dubFx;
     // Pattern Player (program 3)
     pad::pp::Kits ppKits;
@@ -197,10 +200,12 @@ private:
     std::atomic<int> ppSteps { 0x1111 }, ppPage { 0 }, ppPlayStep { -1 };
     int lastPattern = -1; int stepsBeforeCombo = 0; std::atomic<int> pcBase { 0 }; juce::int64 lastPPStep = -1; float duckEnv = 0.0f;
     juce::AudioBuffer<float> musicBuf;
-    brume::FdnReverb reverbFx;
+    pad::HallReverb reverbFx;
     juce::AudioBuffer<float> revBuf;
-    float sm[8] {};          // smoothed send amounts
-    std::array<std::atomic<bool>, 8> fxKilledUi {};
+    float sm[9] {};          // smoothed send amounts
+    station::Svf lpfL, lpfR; float lpfCut = -1.0f;
+    juce::AudioBuffer<float> hydBuf;
+    std::array<std::atomic<bool>, 9> fxKilledUi {};
 
     // clock
     double beat = 0.0, clockTickSamples = 0.0, clockTicks = 0.0;

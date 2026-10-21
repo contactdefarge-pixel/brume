@@ -18,19 +18,22 @@ struct XfadeDelay
 {
     std::vector<float> bufL, bufR;
     int pos = 0, size = 1;
-    double cur = 1000.0, prev = 1000.0;
+    double cur = 1000.0, prev = 1000.0, target = 1000.0, glideCoef = 0.0001;
     float fade = 1.0f, fadeStep = 0.001f;
+    bool glide = false;   // true: a change of time slides the read head (tape-style pitch bend, like the DJM-V10 delays)
 
     void prepare (double fs, double maxSeconds)
     {
         size = (int) (fs * maxSeconds) + 4;
         bufL.assign ((size_t) size, 0.0f); bufR.assign ((size_t) size, 0.0f);
         pos = 0; fade = 1.0f; fadeStep = (float) (1.0 / (0.05 * fs));
+        glideCoef = 1.0 - std::exp (-1.0 / (0.16 * fs));
     }
     void clear() { std::fill (bufL.begin(), bufL.end(), 0.0f); std::fill (bufR.begin(), bufR.end(), 0.0f); }
     void setDelay (double samples)
     {
         samples = juce::jlimit (2.0, (double) size - 3.0, samples);
+        if (glide) { target = samples; return; }
         if (std::abs (samples - cur) < 0.5) return;
         prev = fade < 1.0f ? prev : cur;
         cur = samples; fade = 0.0f;
@@ -45,6 +48,7 @@ struct XfadeDelay
     }
     inline void read (float& l, float& r)
     {
+        if (glide) cur += (target - cur) * glideCoef;
         l = tap (bufL, cur); r = tap (bufR, cur);
         if (fade < 1.0f)
         {
@@ -85,6 +89,120 @@ struct Diffuser
     void prepare (int len, float gain) { b.assign ((size_t) std::max (2, len), 0.0f); pos = 0; g = gain; }
     void clear() { std::fill (b.begin(), b.end(), 0.0f); }
     inline float tick (float x) { const float d = b[(size_t) pos]; const float v = x + g * d; b[(size_t) pos] = v; if (++pos >= (int) b.size()) pos = 0; return d - g * v; }
+};
+
+// Dense hall reverb for the REVERB send (replaces the pedal's FDN here):
+// pre-delay -> 4 allpass diffusers per side -> 8-line feedback delay network (Householder matrix),
+// slowly modulated lines (no metallic ringing), frequency-dependent decay, low end kept out of the tail.
+struct HallReverb
+{
+    struct Line
+    {
+        std::vector<float> b; int w = 0;
+        void prepare (int n) { b.assign ((size_t) std::max (8, n), 0.0f); w = 0; }
+        void clear() { std::fill (b.begin(), b.end(), 0.0f); }
+        inline float read (float d) const
+        {
+            float rp = (float) w - d;
+            const int sz = (int) b.size();
+            while (rp < 0.0f) rp += (float) sz;
+            const int i0 = (int) rp, i1 = (i0 + 1) % sz;
+            const float fr = rp - (float) i0;
+            return b[(size_t) i0] + (b[(size_t) i1] - b[(size_t) i0]) * fr;
+        }
+        inline void write (float x) { b[(size_t) w] = x; if (++w >= (int) b.size()) w = 0; }
+    };
+    static constexpr int N = 8;
+    double fs = 48000.0;
+    Line pre[2]; Diffuser dif[2][4]; Line line[N];
+    float lenBase[N] {}, lenCur[N] {}, gain[N] {}, lp[N] {}, lfo[N] {}, lfoInc[N] {};
+    float preCur = 0.0f, preTarget = 0.0f, dampCoef = 0.3f, modDepth = 4.0f, sizeScale = 1.0f;
+    Svf inHp[2], inLp[2];
+
+    void prepare (double sampleRate)
+    {
+        fs = sampleRate;
+        const double k = fs / 48000.0;
+        static const int base[N] = { 2203, 2621, 2953, 3307, 3691, 4013, 4447, 4801 };
+        for (int i = 0; i < N; ++i)
+        {
+            lenBase[i] = (float) (base[i] * k);
+            line[i].prepare ((int) (lenBase[i] * 1.3f + 64.0f));
+            lenCur[i] = lenBase[i];
+            lfo[i] = (float) i * 0.7f;
+            lfoInc[i] = (float) (juce::MathConstants<double>::twoPi * (0.11 + 0.093 * i) / fs);
+            lp[i] = 0.0f;
+        }
+        static const int dl[2][4] = { { 142, 379, 107, 277 }, { 151, 367, 113, 293 } };
+        static const float dg[4] = { 0.75f, 0.75f, 0.625f, 0.625f };
+        for (int c = 0; c < 2; ++c)
+        {
+            pre[c].prepare ((int) (0.12 * fs));
+            for (int j = 0; j < 4; ++j) dif[c][j].prepare ((int) (dl[c][j] * fs / 29761.0), dg[j]);
+            inHp[c].set ((float) fs, 120.0f, 0.6f);
+            inLp[c].set ((float) fs, 11000.0f, 0.6f);
+        }
+        setParameters (2.0f, 0.5f, 0.6f);
+    }
+    void clear()
+    {
+        for (auto& l : line) l.clear();
+        for (int c = 0; c < 2; ++c) { pre[c].clear(); for (auto& d : dif[c]) d.clear(); inHp[c].reset(); inLp[c].reset(); }
+        for (auto& v : lp) v = 0.0f;
+    }
+    // seconds = RT60 of the tail, size 0..1 (room size, pre-delay, modulation), brightness 0..1
+    void setParameters (float seconds, float size, float brightness)
+    {
+        sizeScale = 0.55f + 0.7f * size;
+        preTarget = (float) ((0.006 + 0.034 * size) * fs);
+        modDepth = (float) ((2.0 + 7.0 * size) * fs / 48000.0);
+        const float cutoff = 2500.0f + 9000.0f * brightness;
+        dampCoef = std::exp (-juce::MathConstants<float>::twoPi * cutoff / (float) fs);
+        for (int i = 0; i < N; ++i)
+        {
+            const float len = lenBase[i] * sizeScale;
+            gain[i] = std::pow (10.0f, -3.0f * len / (std::max (0.2f, seconds) * (float) fs));
+        }
+        for (int c = 0; c < 2; ++c) inLp[c].set ((float) fs, 6000.0f + 8000.0f * brightness, 0.6f);
+    }
+    void process (float* left, float* right, int n)
+    {
+        static const float sL[N] = { 1, -1, 1, -1, 1, -1, 1, -1 };
+        static const float sR[N] = { 1, 1, -1, -1, 1, 1, -1, -1 };
+        for (int s = 0; s < n; ++s)
+        {
+            preCur += (preTarget - preCur) * 0.0005f;
+            float in[2] = { left[s], right[s] };
+            for (int c = 0; c < 2; ++c)
+            {
+                float x = inLp[c].tick (inHp[c].tick (in[c]).hp).lp;
+                pre[c].write (x);
+                x = pre[c].read (preCur + 1.0f);
+                for (auto& d : dif[c]) x = d.tick (x);
+                in[c] = x;
+            }
+            float o[N], sum = 0.0f;
+            for (int i = 0; i < N; ++i)
+            {
+                lenCur[i] += (lenBase[i] * sizeScale - lenCur[i]) * 0.0002f;
+                lfo[i] += lfoInc[i]; if (lfo[i] > juce::MathConstants<float>::twoPi) lfo[i] -= juce::MathConstants<float>::twoPi;
+                float y = line[i].read (lenCur[i] + modDepth * (1.0f + std::sin (lfo[i])));
+                lp[i] = y + (lp[i] - y) * dampCoef;   // one-pole low-pass in the loop: highs decay faster
+                o[i] = lp[i] * gain[i];
+                sum += o[i];
+            }
+            const float h = sum * (2.0f / (float) N);
+            float outL = 0.0f, outR = 0.0f;
+            for (int i = 0; i < N; ++i)
+            {
+                const float fb = o[i] - h;   // Householder: lossless mixing of the 8 lines
+                line[i].write (fb + ((i & 1) ? in[1] : in[0]) * 0.6f);
+                outL += o[i] * sL[i]; outR += o[i] * sR[i];
+            }
+            left[s] = outL * 0.8f;
+            right[s] = outR * 0.8f;
+        }
+    }
 };
 
 // One echo with a coloured feedback path: 0 = high-pass echo, 1 = low-pass echo, 2 = crush echo, 3 = clean delay,

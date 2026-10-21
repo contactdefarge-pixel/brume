@@ -317,7 +317,7 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
         const float wc = revoloNoise ? 0.38f : 0.71f, wi = revoloNoise ? 0.92f : 0.71f;
         const float a = (common * wc + (noiseRandom.nextFloat() * 2.0f - 1.0f) * wi) * 0.5f;
         const float b = (common * wc + (noiseRandom.nextFloat() * 2.0f - 1.0f) * wi) * 0.5f;
-        const float ng = noiseAmt * noiseGate;
+        const float ng = noiseAmt * noiseGate * noiseTrim;
         nL[i] = noiseLP[0].processSample (noiseHP[0].processSample (a)) * ng;
         nR[i] = noiseLP[1].processSample (noiseHP[1].processSample (b)) * ng;
     }

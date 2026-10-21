@@ -48,6 +48,7 @@ public:
     // embedded = used inside Brume Pad (no F1 reader, no timer); revoloNoise = noise voiced like the Teile Revolo
     explicit BrumeProcessor (bool embedded = false);
     void setRevoloNoise (bool r) { revoloNoise = r; }
+    void setNoiseTrim (float g)    { noiseTrim = g; }   // embedded use: overall noise level
     void setSlowNoiseDown (bool b) { slowNoiseDown = b; }
     void setFreeTremolo (bool b)   { freeTremolo = b; }   // tremolo always in Hz, never locked to the beat
     ~BrumeProcessor() override;
@@ -152,6 +153,7 @@ private:
     std::atomic<bool> tapReset { false };
     juce::Random noiseRandom;
     bool revoloNoise = false, slowNoiseDown = false;
+    float noiseTrim = 1.0f;
 
     // tap tempo (message thread)
     juce::Array<double> taps;

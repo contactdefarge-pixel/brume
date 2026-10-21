@@ -62,7 +62,8 @@ PadProcessor::PadProcessor()
 {
     brumeEngine.setRevoloNoise (true);
     brumeEngine.setSlowNoiseDown (true);
-    brumeEngine.setFreeTremolo (true);   // K7 TEMPO = a plain rate in Hz, glides without any cut
+    brumeEngine.setFreeTremolo (true);
+    brumeEngine.setNoiseTrim (0.4f);    // white noise -8 dB here (it was far too loud next to the music)   // K7 TEMPO = a plain rate in Hz, glides without any cut
     brumeEngine.setPlayHead (&brumeHead);
     for (auto& d : padDown) d.store (false);
     for (auto& h : padHit) h.store (-10.0);
@@ -106,6 +107,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PadProcessor::createLayout()
     add (id::drums, "Drums Volume", 0.8f, pct);
     add (id::pitch, "Drums Pitch", 0.5f, [] (float v, int) { const int s = juce::roundToInt (-12.0f + 24.0f * v); return (s > 0 ? "+" : "") + juce::String (s) + " st"; });
     add (id::shortDelay, "Short Delay Send", 0.0f, fxText);
+    add (id::lpf, "LPF", 0.0f, [] (float v, int) { return v < 0.01f ? juce::String ("OFF") : juce::String (juce::roundToInt (20000.0f * std::pow (150.0f / 20000.0f, v))) + " Hz"; });
     add (id::longDelay, "Long Delay Send", 0.0f, fxText);
     add (id::dubEcho, "Dub Echo Send", 0.0f, fxText);
     add (id::reverb, "Reverb Send", 0.0f, fxText);
@@ -115,7 +117,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PadProcessor::createLayout()
     ps.push_back (std::make_unique<F> (juce::ParameterID { id::bpm, 1 }, "Tempo (no sync)", juce::NormalisableRange<float> (60.0f, 200.0f, 0.1f), 124.0f,
                                        A().withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " BPM"; })));
     add (id::master, "Master", 0.8f, pct);
-    ps.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id::fxTarget, 1 }, "Sounds Only", false));
+    ps.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id::fxInput, 1 }, "FX Source Input", true));
+    ps.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id::fxHydra, 1 }, "FX Source Hydra", true));
     add (id::ppVolume, "Pattern Volume", 0.0f, fxText);
     add (id::ppPitch, "Pattern Pitch", 0.5f, [] (float v, int) { const int s = juce::roundToInt (-12.0f + 24.0f * v); return (s > 0 ? "+" : "") + juce::String (s) + " st"; });
     add (id::ppDecay, "Pattern Decay", 1.0f, pct);
@@ -146,6 +149,9 @@ void PadProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     brumeEngine.prepareToPlay (fs, maxBlock);
     kit.prepare (fs);
     shortFx.prepare (fs, 3); longFx.prepare (fs, 3); dubFx.prepare (fs, 4);
+    shortFx.line.glide = true; longFx.line.glide = true;   // TIME bends the repeats like tape (DJM-V10)
+    lpfL.reset(); lpfR.reset(); lpfCut = -1.0f;
+    hydBuf.setSize (1, maxBlock);
     reverbFx.prepare (fs);
     revBuf.setSize (2, maxBlock);
     musicBuf.setSize (2, maxBlock);
@@ -322,7 +328,6 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
         {
             soundBeforeCombo = apvts.getRawParameterValue (id::sound)->load(); activeBeforeCombo = activeSound.load();
             stepsBeforeCombo = ppSteps.load();
-            tremBeforeCombo = brumeEngine.apvts.getRawParameterValue (brume::id::tremolo)->load();
         }
         lastComboPress = now;
         comboTime[(size_t) pad] = now;
@@ -330,18 +335,17 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
         auto restore = [&]   // the first pad of the combo is not a choice
         {
             if (prog == 0) { setParam (apvts, id::sound, soundBeforeCombo); activeSound.store (activeBeforeCombo); }
-            if (prog == 1) setParam (brumeEngine.apvts, brume::id::tremolo, tremBeforeCombo);
             if (prog == 2) ppSteps.store (stepsBeforeCombo);
         };
         if (pair (4, 7)) { restore(); doKill(); comboTime.fill (-10.0); return; }
-        if (pair (5, 6)) { restore(); toggleFxTarget(); comboTime.fill (-10.0); return; }
+        if (pair (5, 6)) { restore(); toggleSource (id::fxInput); comboTime.fill (-10.0); return; }
     }
 
     if (prog == 3)   // GLOBAL page
     {
         if (! down) return;
-        if (pad == 4) { setParam (apvts, id::fxTarget, 0.0f); setEvent ("FX : MUSIQUE + SONS"); }
-        if (pad == 5) { setParam (apvts, id::fxTarget, 1.0f); setEvent ("FX : SONS SEULS"); }
+        if (pad == 4) toggleSource (id::fxInput);
+        if (pad == 5) toggleSource (id::fxHydra);
         return;
     }
 
@@ -392,7 +396,6 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
         {
             case 4: if (down) setParam (b, brume::id::on, b.getRawParameterValue (brume::id::on)->load() > 0.5f ? 0.0f : 1.0f); break;
             case 5: if (down) brumeEngine.tap(); break;
-            case 6: if (down) setParam (b, brume::id::tremolo, b.getRawParameterValue (brume::id::tremolo)->load() > 0.05f ? 0.0f : 0.8f); break;
             case 7: setParam (b, brume::id::on, down ? 1.0f : 0.0f); break;   // HOLD: on while the pad is held
             default: break;
         }
@@ -405,20 +408,20 @@ void PadProcessor::handleKnob (int prog, int knob, float v)
     else if (prog == 1) setParam (brumeEngine.apvts, p2KnobId (knob), v);
     else if (prog == 2) setParam (apvts, p3KnobId (knob), v);
     else if (prog == 3 && knob == 0) setParam (apvts, id::master, v);
+    else if (prog == 3 && knob == 1) setParam (apvts, id::shortDelay, v);
 }
 
-void PadProcessor::toggleFxTarget()
+void PadProcessor::toggleSource (const char* pid)
 {
-    const bool soundsOnly = ! isSoundsOnly();
-    setParam (apvts, id::fxTarget, soundsOnly ? 1.0f : 0.0f);
-    setEvent (soundsOnly ? "FX : SONS SEULS" : "FX : MUSIQUE + SONS");
+    const bool on = apvts.getRawParameterValue (pid)->load() < 0.5f;
+    setParam (apvts, pid, on ? 1.0f : 0.0f);
+    setEvent (juce::String ("FX SOURCE ") + (pid == id::fxInput ? "INPUT" : "HYDRA") + (on ? " ON" : " OFF"));
 }
 
 void PadProcessor::doKill()
 {
-    for (int k = 2; k <= 5; ++k) fx[(size_t) k].kill();
+    for (int k : { 2, 3, 4, 5, 8 }) fx[(size_t) k].kill();   // LPF opens, sends close (tails ring out)
     setParam (brumeEngine.apvts, brume::id::on, 0.0f);   // Brume stops, its tail fades with LENGTH
-    setParam (brumeEngine.apvts, brume::id::tremolo, 0.0f);   // TREM ON pad off
     activeSound.store (-1);                              // X-PAD: sound and speed pads all off
     activeSpeed.store (-1);
     ppSteps.store (0);                                   // Pattern Player: every step off (press steps or turn K7 to start again)
@@ -499,7 +502,7 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     const double beatAtStart = beat;
 
     // ---- effect knobs follow their parameters (screen, controller, host automation); a KILL holds until the knob moves ----
-    for (int k = 2; k < numKnobs; ++k)
+    for (int k = 2; k < (int) fx.size(); ++k)
     {
         const float pv = apvts.getRawParameterValue (p1KnobId (k))->load();
         if (std::abs (pv - fx[(size_t) k].target) > 1.0e-4f) fx[(size_t) k].set (pv);
@@ -512,7 +515,9 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     if (musicBuf.getNumSamples() < n) musicBuf.setSize (2, n, false, false, true);
     for (int c = 0; c < 2; ++c) musicBuf.copyFrom (c, 0, buffer, c, 0, n);
     buffer.clear (0, 0, n); buffer.clear (1, 0, n);
-    const bool soundsOnly = isSoundsOnly();
+    const bool srcInput = fxInputOn(), srcHydra = fxHydraOn();
+    if (hydBuf.getNumSamples() < n) hydBuf.setSize (1, n, false, false, true);
+    auto* hy = hydBuf.getWritePointer (0);
     auto* mL = musicBuf.getWritePointer (0);
     auto* mR = musicBuf.getWritePointer (1);
 
@@ -524,7 +529,7 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     const float ppSemis = -12.0f + 24.0f * apvts.getRawParameterValue (id::ppPitch)->load();
     const float ppDecayV = apvts.getRawParameterValue (id::ppDecay)->load();
     const float ppGate = 0.03f + 2.0f * ppDecayV * ppDecayV;
-    const float duckAmt = soundsOnly ? 0.0f : apvts.getRawParameterValue (id::ppDuck)->load();
+    const float duckAmt = srcInput ? apvts.getRawParameterValue (id::ppDuck)->load() : 0.0f;
     const float duckCoef = std::exp (-1.0f / ((0.05f + 0.35f * ppDecayV) * (float) fs));
     const int ppKitI = stepsOf (apvts.getRawParameterValue (id::ppKit)->load(), pad::pp::numKits);
     const int ppSoundI = stepsOf (apvts.getRawParameterValue (id::ppSound)->load(), pad::pp::soundsPerKit);
@@ -578,8 +583,12 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
             // DUCK: the music dips under each pattern hit (only when the effects act on the music)
             const float g = 1.0f - duckAmt * 0.85f * duckEnv;
             duckEnv *= duckCoef;
-            if (soundsOnly) { L[i] = y; R[i] = y; }
-            else { L[i] = mL[i] * g + y; R[i] = mR[i] * g + y; }
+            // FX SOURCE: each source goes into the effects, or is kept aside and added dry at the end
+            const float ml = srcInput ? mL[i] * g : 0.0f, mr = srcInput ? mR[i] * g : 0.0f;
+            if (srcInput) { mL[i] = 0.0f; mR[i] = 0.0f; }
+            hy[i] = srcHydra ? 0.0f : y;
+            L[i] = ml + (srcHydra ? y : 0.0f);
+            R[i] = mr + (srcHydra ? y : 0.0f);
             b += inc;
         }
         beat = b;
@@ -595,12 +604,11 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     const double spb = 60.0 / bpm * fs;   // samples per beat
     const float size = fx[6].target, timeK = fx[7].target;
     {
-        static const double shortBeats[] = { 1.0 / 32.0, 1.0 / 16.0, 3.0 / 32.0, 1.0 / 8.0 };
-        static const double longBeats[]  = { 0.25, 0.375, 0.5, 0.75, 1.0 };
         static const double dubBeats[]   = { 0.125, 0.1875, 0.25, 0.375, 0.5, 0.75, 1.0 };
         auto pick = [timeK] (const double* t, int count) { return t[juce::jlimit (0, count - 1, (int) (timeK * (float) count))]; };
-        shortFx.line.setDelay (pick (shortBeats, 4) * spb);
-        longFx.line.setDelay (pick (longBeats, 5) * spb);
+        // short and long delays: TIME is continuous and the repeats bend in pitch while it moves (tape style)
+        shortFx.line.setDelay (spb / 32.0 * std::pow (4.0, (double) timeK));   // 1/32 .. 1/8 beat
+        longFx.line.setDelay (spb / 4.0 * std::pow (4.0, (double) timeK));     // 1/4 .. 1 beat
         dubFx.line.setDelay (pick (dubBeats, 7) * spb);
         shortFx.setFilter (12000.0f);
         longFx.setFilter (8000.0f);
@@ -610,18 +618,29 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     }
     // feedback: low (repeats die fast) -> maximum (repeats go on until the effect is cut). A KILL caps it so tails end.
     auto feedback = [&] (int k) { const float f = 0.1f + 0.88f * size; return fx[(size_t) k].killed ? std::min (f, 0.5f) : f; };
-    const float fbShort = feedback (2), fbLong = feedback (3), fbDub = std::min (0.97f, feedback (4) * 1.02f);
+    const float fbShort = feedback (8), fbLong = feedback (3), fbDub = std::min (0.97f, feedback (4) * 1.02f);
 
     const float smoothFast = 1.0f - std::exp (-1.0f / (0.03f * (float) fs));
     auto* rl = revBuf.getWritePointer (0); auto* rr = revBuf.getWritePointer (1);
     for (int i = 0; i < n; ++i)
     {
-        for (int k = 2; k <= 5; ++k)
+        for (int k : { 2, 3, 4, 5, 8 })
             sm[k] += (fx[(size_t) k].effective() - sm[k]) * smoothFast;
 
-        const float l = L[i], r = R[i];
+        // LPF (K3): open at 0, down to 150 Hz at max, a touch of resonance
+        if ((i & 15) == 0 && std::abs (sm[2] - lpfCut) > 1.0e-4f)
+        {
+            lpfCut = sm[2];
+            const float hz = 20000.0f * std::pow (150.0f / 20000.0f, lpfCut);
+            lpfL.set ((float) fs, hz, 0.9f + 0.6f * lpfCut); lpfR.set ((float) fs, hz, 0.9f + 0.6f * lpfCut);
+        }
+        float l = L[i], r = R[i];
+        {
+            const float fl = lpfL.tick (l).lp, fr = lpfR.tick (r).lp, mix = std::min (1.0f, sm[2] * 12.0f);
+            l += (fl - l) * mix; r += (fr - r) * mix;
+        }
         float el = 0.0f, er = 0.0f, o0, o1;
-        shortFx.process (l * sm[2], r * sm[2], fbShort, 0.0f, o0, o1);  el += o0 * 0.8f;  er += o1 * 0.8f;
+        shortFx.process (l * sm[8], r * sm[8], fbShort, 0.0f, o0, o1);  el += o0 * 0.8f;  er += o1 * 0.8f;
         longFx.process (l * sm[3], r * sm[3], fbLong, 0.0f, o0, o1);    el += o0 * 0.8f;  er += o1 * 0.8f;
         dubFx.process (l * sm[4], r * sm[4], fbDub, 0.0f, o0, o1);      el += o0 * 0.95f; er += o1 * 0.95f;
 
@@ -632,12 +651,12 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     }
     reverbFx.process (rl, rr, n);
     const float master = std::pow (apvts.getRawParameterValue (id::master)->load(), 2.0f) * 1.25f;
-    // soft clip that leaves everything below -1 dB untouched (the music passes cleanly in SONS SEULS)
+    // soft clip that leaves everything below -1 dB untouched (dry music passes cleanly)
     auto clip = [] (float x) { const float a = std::abs (x); if (a <= 0.89f) return x; const float y = 0.89f + 0.11f * std::tanh ((a - 0.89f) / 0.11f); return x < 0.0f ? -y : y; };
     for (int i = 0; i < n; ++i)
     {
-        L[i] = clip ((L[i] + rl[i] * 1.4f) * master + (soundsOnly ? mL[i] : 0.0f));
-        R[i] = clip ((R[i] + rr[i] * 1.4f) * master + (soundsOnly ? mR[i] : 0.0f));
+        L[i] = clip ((L[i] + rl[i] * 1.4f + hy[i]) * master + mL[i]);   // mL / hy hold only the sources kept dry
+        R[i] = clip ((R[i] + rr[i] * 1.4f + hy[i]) * master + mR[i]);
     }
     for (int c = 0; c < 2; ++c)
     {
@@ -666,7 +685,7 @@ float PadProcessor::getKillFlash() const
 float PadProcessor::getKnobValue (int prog, int k) const
 {
     if (prog == 0) return apvts.getRawParameterValue (p1KnobId (p1Slot (k)))->load();
-    if (prog == 3) return k == 0 ? apvts.getRawParameterValue (id::master)->load() : 0.0f;
+    if (prog == 3) return k == 0 ? apvts.getRawParameterValue (id::master)->load() : k == 1 ? apvts.getRawParameterValue (id::shortDelay)->load() : 0.0f;
     if (prog == 1) if (auto* p = brumeEngine.apvts.getParameter (p2KnobId (k))) return p->getValue();
     if (prog == 2) return apvts.getRawParameterValue (p3KnobId (k))->load();
     return 0.0f;
@@ -677,6 +696,7 @@ juce::String PadProcessor::getKnobText (int prog, int k) const
     if (prog == 0) if (auto* p = apvts.getParameter (p1KnobId (p1Slot (k)))) return p->getCurrentValueAsText();
     if (prog == 3)
     {
+        if (k == 1) return apvts.getParameter (id::shortDelay)->getCurrentValueAsText();
         if (k != 0) return {};
         const float db = masterDb (apvts.getRawParameterValue (id::master)->load());
         return db <= -99.0f ? juce::String ("-INF") : (db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB";

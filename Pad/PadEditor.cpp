@@ -68,7 +68,6 @@ namespace
             {
                 case 4: return { red, p.isBrumeOn() };
                 case 5: return { green, onBeat };
-                case 6: return { juce::Colour (0xffb070ff), p.getKnobValue (1, 5) > 0.05f };
                 case 7: return { print, down };
                 default: return { edge, false };   // bottom row unused in this program
             }
@@ -82,8 +81,8 @@ namespace
         }
         if (prog == 3)
         {
-            if (pad == 4) return { orange, ! p.isSoundsOnly() };
-            if (pad == 5) return { orange, p.isSoundsOnly() };
+            if (pad == 4) return { orange, p.fxInputOn() };
+            if (pad == 5) return { orange, p.fxHydraOn() };
         }
         return { edge, false };
     }
@@ -102,14 +101,16 @@ namespace
 "     Programme 1 = X-PAD (kick, snare, clap, hi-hat en roulements) + effets Send du DJM-V10\n"
 "     Programme 2 = WHITE NOISE (bruit blanc façon Revolo, réverbe, trémolo)\n"
 "     Programme 3 = PATTERN PLAYER (boîte à rythme 16 pas, comme dans Traktor)\n"
-"     Programme 4 = GLOBAL (K1 = MASTER, PAD 5 / PAD 6 = FX sur MUSIQUE + SONS / SONS SEULS)\n"
+"     Programme 4 = GLOBAL (K1 = MASTER, K2 = SHORT DELAY, PAD 5 / PAD 6 = FX SOURCE INPUT / HYDRA)\n"
 "  Hydra reconnaît tout seul le programme utilisé (après le SETUP LPD8) et l'écran change ses étiquettes.\n"
 "- À l'écran : cliquer sur PROGRAM puis sur un des pads 1 à 4, ou utiliser les pads et boutons à la souris.\n"
 "- Tout est calé sur le tempo de Traktor grâce à l'horloge MIDI (onglet SYNCHRO).\n"
 "- KILL FX coupe tous les effets d'un coup en laissant les queues d'écho et de réverbe s'éteindre.\n"
-"- Le commutateur FX SUR (panneau de droite ; sur le LPD8 : PAD 6 + PAD 7 en même temps, ou programme 4) :\n"
-"     FX : MUSIQUE + SONS = les effets (delays, dub echo, réverbe, white noise, DUCK) s'appliquent au morceau ET aux sons d'Hydra.\n"
-"     FX : SONS SEULS = le morceau passe intact ; seuls les roulements, le bruit blanc et le pattern sont joués et traités par les effets.");
+"- FX SOURCE (panneau de droite, comme sur le RMX-1000) : ce qui entre dans les effets.\n"
+"     INPUT = la musique de Traktor. HYDRA = les sons d'Hydra (roulements X-PAD, Pattern Player).\n"
+"     Les deux allumés : tout passe dans les effets. Une source éteinte passe intacte, sans effet.\n"
+"     Le bruit blanc passe toujours dans les effets (comme le NOISE du RMX-1000).\n"
+"     Sur le LPD8 : PAD 6 + PAD 7 en même temps allume / éteint INPUT ; programme 4 : PAD 5 = INPUT, PAD 6 = HYDRA.");
             case 1: return u (
 "PROGRAMME 1 - X-PAD + EFFETS\n\n"
 "PADS DU HAUT (PAD 5 à 8) : KICK, SNARE, CLAP, HAT. Un appui lance le roulement, un deuxième appui l'arrête. "
@@ -120,16 +121,17 @@ namespace
 "BOUTONS\n"
 "   K1 DRUMS VOL : volume des roulements. Monter avant le drop, baisser au drop.\n"
 "   K2 PITCH : hauteur des sons (-12 à +12). Monter pendant un roulement = montée.\n\n"
-"   EFFETS SEND FAÇON DJM-V10 (K3, K4, K7, K8 = quantité de musique envoyée dans chaque effet) :\n"
-"   K3 SHORT DELAY : delay court et serré.\n"
-"   K4 LONG DELAY : delay long, calé sur le tempo.\n"
+"   K3 LPF : filtre passe-bas. À zéro il ne fait rien, en tournant le son s'assombrit jusqu'à 150 Hz.\n\n"
+"   EFFETS SEND FAÇON DJM-V10 (K4, K7, K8 = quantité de musique envoyée dans chaque effet ; SHORT DELAY : programme 4, K2) :\n"
+"   K4 LONG DELAY : delay long.\n"
 "   K7 DUB ECHO : écho sombre qui se fond en réverbe, comme sur la V10 / 900NXS2.\n"
 "   K8 REVERB : réverbe.\n"
 "   K5 SIZE / FEEDBACK : pour les delays et le dub echo, la durée des répétitions (à fond = elles continuent "
 "jusqu'au KILL FX) ; pour la réverbe, la taille de la pièce (à fond = grande salle vide, plus de graves).\n"
-"   K6 TIME : la durée. Short delay de 1/32 à 1/8 de temps, long delay de 1/4 à 1 temps, dub echo de 1/8 à "
+"   K6 TIME : la durée, en continu. Short delay de 1/32 à 1/8 de temps, long delay de 1/4 à 1 temps : tourner TIME "
+"pendant que les répétitions sonnent les fait glisser en hauteur, comme une bande (DJM-V10). Dub echo de 1/8 à "
 "1 temps, réverbe de courte à très longue. Tout est calé sur le tempo de Traktor.\n\n"
-"Baisser un envoi (K3, K4, K7, K8) laisse la queue sonner. KILL FX ferme les 4 envois et réduit le feedback pour que les "
+"Baisser un envoi (K4, K7, K8) laisse la queue sonner. KILL FX ouvre le LPF, ferme les envois et réduit le feedback pour que les "
 "queues s'éteignent toutes seules.\n\n"
 "EXEMPLE DE DROP : SNARE (le roulement part en 1/4), puis 1/8, 1/16, 1/32 en montant K1 et K2 ; au drop, "
 "ré-appuyer sur SNARE (ou baisser K1).");
@@ -140,7 +142,6 @@ namespace
 "PADS\n"
 "   PAD 5 ON / OFF : allume / éteint le bruit blanc (la queue s'éteint selon LENGTH)\n"
 "   PAD 6 TAP : taper la vitesse du trémolo (en rythme avec la musique)\n"
-"   PAD 7 TREM ON : trémolo marche / arrêt\n"
 "   PAD 8 HOLD : bruit blanc allumé tant qu'on appuie\n"
 "   PADS 1 à 4 (rangée du bas) : inactifs dans ce programme. La vitesse du trémolo se règle en Hz avec K7 TEMPO.\n\n"
 "BOUTONS\n"
@@ -161,7 +162,7 @@ namespace
 "   K1 VOLUME : à zéro, rien ne joue. C'est le bouton pour lancer / couper le pattern.\n"
 "   K2 PITCH : hauteur du son (-12 à +12).\n"
 "   K3 DECAY : longueur du son (court = sec, à fond = son entier).\n"
-"   K4 DUCK : baisse la musique à chaque coup (effet pompe). Seulement en mode FX : MUSIQUE + SONS.\n"
+"   K4 DUCK : baisse la musique à chaque coup (effet pompe). Seulement quand FX SOURCE INPUT est allumé.\n"
 "   K5 KIT : 808, 909 ou RMX (les sons extraits de ton RMX-1000).\n"
 "   K6 SOUND : KICK, SNARE, CLAP, CL HAT, OP HAT, RIM, TOM, CYMBAL.\n"
 "   K7 PATTERN : 8 patterns de départ (4 temps, contretemps, backbeat, croches, doubles, syncopé, shuffle, fill). "
@@ -170,23 +171,24 @@ namespace
 "ASTUCE : choisir CL HAT + PATTERN 2 (contretemps) pour ajouter un charley sur un morceau, ou CLAP + PATTERN 3 avant un drop.");
             case 4: return u (
 "KILL FX\n\n"
-"Coupe tout d'un coup : short delay, long delay, dub echo, réverbe, white noise, et remet tous les pads à zéro : X-PAD (son et vitesse éteints), White noise (ON et TREM ON éteints), Pattern Player (tous les pas éteints ; ré-appuyer sur des pas ou tourner K7 PATTERN pour repartir). Les échos et réverbes "
+"Coupe tout d'un coup : LPF (rouvert), short delay, long delay, dub echo, réverbe, white noise, et remet tous les pads à zéro : X-PAD (son et vitesse éteints), White noise (ON éteint), Pattern Player (tous les pas éteints ; ré-appuyer sur des pas ou tourner K7 PATTERN pour repartir). Les échos et réverbes "
 "gardent leur queue (le feedback est réduit pour qu'elle s'éteigne), rien ne s'arrête brutalement.\n\n"
 "TROIS FAÇONS DE LE DÉCLENCHER\n"
 "   1. Sur le LPD8 : appuyer sur CC puis sur n'importe quel pad (en mode CC les pads envoient des messages CC, "
 "que Hydra interprète comme KILL FX). Appuyer ensuite sur NOTE pour revenir aux pads normaux.\n"
 "   2. Sur le LPD8 : appuyer en même temps sur PAD 5 et PAD 8.\n"
 "   3. À l'écran : le bouton CC · KILL.\n\n"
-"AUTRE COMBINAISON : PAD 6 + PAD 7 en même temps bascule FX SUR (MUSIQUE + SONS / SONS SEULS), dans tous les programmes.\n\n"
+"AUTRE COMBINAISON : PAD 6 + PAD 7 en même temps allume / éteint FX SOURCE INPUT, dans tous les programmes.\n\n"
 "Le bouton CC seul n'envoie rien (c'est un changement de mode du contrôleur), d'où la combinaison CC + pad.\n\n"
 "Après un KILL, un effet reste coupé même si son bouton est encore tourné : il revient dès que tu bouges ce bouton.");
             case 6: return u (
 "PROGRAMME 4 - GLOBAL\n\n"
 "Les réglages généraux, pilotables depuis le LPD8.\n\n"
 "   K1 MASTER : volume de sortie (la valeur en dB s'affiche aussi à droite, à côté du vu-mètre).\n"
-"   PAD 5 : FX sur MUSIQUE + SONS (les effets traitent le morceau et les sons d'Hydra).\n"
-"   PAD 6 : FX sur SONS SEULS (le morceau passe intact).\n\n"
-"Raccourci depuis n'importe quel programme : PAD 6 + PAD 7 en même temps bascule FX SUR.");
+"   K2 SHORT DELAY : envoi vers le delay court (SIZE et TIME : K5 et K6 du programme 1).\n"
+"   PAD 5 : FX SOURCE INPUT marche / arrêt (la musique entre dans les effets ou passe intacte).\n"
+"   PAD 6 : FX SOURCE HYDRA marche / arrêt (les sons d'Hydra entrent dans les effets ou passent intacts).\n\n"
+"Raccourci depuis n'importe quel programme : PAD 6 + PAD 7 en même temps allume / éteint INPUT.");
             case 5: return u (
 "SETUP LPD8 (une seule fois)\n\n"
 "Chaque programme du LPD8 envoie ses propres numéros de notes et de boutons. Le SETUP les apprend, ensuite "
@@ -474,11 +476,11 @@ PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p
     // in program 3 the NOTE / PROG CHNG buttons choose the half of the 16-step pattern (like on the LPD8)
     noteBtn.onClick = [this] { proc.setPatternPage (0); };
     pcBtn.onClick = [this] { proc.setPatternPage (1); };
-    auto setTarget = [this] (float v) { if (auto* prm = proc.apvts.getParameter (id::fxTarget)) prm->setValueNotifyingHost (v); };
-    fxMusicBtn.onClick = [setTarget] { setTarget (0.0f); };
-    fxOnlyBtn.onClick = [setTarget] { setTarget (1.0f); };
-    body.addAndMakeVisible (fxMusicBtn);
-    body.addAndMakeVisible (fxOnlyBtn);
+    auto toggle = [this] (const char* pid) { if (auto* prm = proc.apvts.getParameter (pid)) prm->setValueNotifyingHost (prm->getValue() > 0.5f ? 0.0f : 1.0f); };
+    fxInputBtn.onClick = [toggle] { toggle (id::fxInput); };
+    fxHydraBtn.onClick = [toggle] { toggle (id::fxHydra); };
+    body.addAndMakeVisible (fxInputBtn);
+    body.addAndMakeVisible (fxHydraBtn);
     ccBtn.setButtonText (juce::String::fromUTF8 ("CC · KILL"));
     ccBtn.setComponentID ("kill");
     ccBtn.onClick = [this] { proc.killFx(); };
@@ -533,8 +535,8 @@ void PadEditor::layoutBody()
     offsetSlider.setBounds (px + 16, 112, 126, 20);
     bpmSlider.setBounds (px + 158, 112, 126, 20);
     masterKnob.setBounds (px + 16, 156, 66, 66);
-    fxMusicBtn.setBounds (px + 146, 174, 138, 32);
-    fxOnlyBtn.setBounds (px + 146, 212, 138, 32);
+    fxInputBtn.setBounds (px + 146, 174, 138, 32);
+    fxHydraBtn.setBounds (px + 146, 212, 138, 32);
     setupBtn.setBounds (px + 14, 290, 190, 40);
     helpBtn.setBounds (px + 214, 290, 72, 40);
 }
@@ -557,7 +559,7 @@ void PadEditor::timerCallback()
         const bool used = juce::String (knobLabel (prog, k)).isNotEmpty();
         s.setEnabled (used);
         s.setAlpha (used ? 1.0f : 0.25f);
-        const bool killed = prog == 0 && proc.isFxKilled (p1Slot (k));
+        const bool killed = (prog == 0 && proc.isFxKilled (p1Slot (k))) || (prog == 3 && k == 1 && proc.isFxKilled (8));
         s.getProperties().set ("arc", (juce::int64) (killed ? juce::Colour (0xff5a2a2a) : prog == 3 ? print : orange).getARGB());
     }
     const bool p3 = prog == 2;
@@ -566,8 +568,8 @@ void PadEditor::timerCallback()
     pcBtn.setToggleState (p3 && proc.getPatternPage() == 1, juce::dontSendNotification);
     noteBtn.setButtonText (p3 ? juce::String::fromUTF8 ("NOTE · 1-8") : juce::String ("NOTE"));
     pcBtn.setButtonText (p3 ? juce::String::fromUTF8 ("PROG CHNG · 9-16") : juce::String ("PROG CHNG"));
-    fxMusicBtn.setToggleState (! proc.isSoundsOnly(), juce::dontSendNotification);
-    fxOnlyBtn.setToggleState (proc.isSoundsOnly(), juce::dontSendNotification);
+    fxInputBtn.setToggleState (proc.fxInputOn(), juce::dontSendNotification);
+    fxHydraBtn.setToggleState (proc.fxHydraOn(), juce::dontSendNotification);
     setupBtn.setButtonText (proc.getLearnStep() == 9 ? "SKIP (FIN)" : proc.getLearnStep() > 0 ? "CANCEL SETUP" : "SETUP LPD8");
     setupBtn.setToggleState (proc.getLearnStep() > 0, juce::dontSendNotification);
     ccBtn.setToggleState (proc.getKillFlash() > 0.0f, juce::dontSendNotification);
@@ -647,7 +649,7 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.setFont (labelFont (9.0f, true, 0.12f));
         g.drawText ("K" + juce::String (k + 1), juce::Rectangle<float> (kb.getCentreX() - 40.0f, kb.getY() - 38.0f, 80.0f, 12.0f), juce::Justification::centred);
         if (label.isEmpty()) continue;
-        const bool killed = prog == 0 && proc.isFxKilled (p1Slot (k));
+        const bool killed = (prog == 0 && proc.isFxKilled (p1Slot (k))) || (prog == 3 && k == 1 && proc.isFxKilled (8));
         g.setColour (killed ? red : orange);
         g.setFont (labelFont (9.5f, true, 0.1f));
         g.drawFittedText (label, juce::Rectangle<int> ((int) kb.getCentreX() - 44, (int) kb.getY() - 23, 88, 13), juce::Justification::centred, 1, 0.7f);
@@ -776,7 +778,7 @@ void PadEditor::paintBody (juce::Graphics& g)
     }
     g.setColour (printFaint);
     g.setFont (labelFont (9.0f, true, 0.14f));
-    g.drawText ("FX SUR", juce::Rectangle<float> (px + 147.0f, 158.0f, 120.0f, 12.0f), juce::Justification::centredLeft);
+    g.drawText ("FX SOURCE", juce::Rectangle<float> (px + 147.0f, 158.0f, 120.0f, 12.0f), juce::Justification::centredLeft);
     {
         auto toDb = [] (float a) { return a > 1.0e-5f ? 20.0f * std::log10 (a) : -100.0f; };
         const float pk = toDb (std::max (peakHold[0], peakHold[1]));

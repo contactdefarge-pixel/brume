@@ -84,6 +84,24 @@ int main()
 {
     juce::ScopedJuceInitialiser_GUI gui;
     {
+        // REVERB alone: 0.5 s noise burst, level in and out, then the decay
+        pad::HallReverb rv; rv.prepare (fs); rv.setParameters (2.3f, 0.5f, 0.6f);
+        juce::Random rnd (7); const int blk = 512; std::vector<float> l (blk), r (blk);
+        double inE = 0, outE = 0; std::vector<double> tail;
+        for (int b = 0; b < (int) (4.0 * fs / blk); ++b)
+        {
+            double e = 0;
+            for (int i = 0; i < blk; ++i) { const float x = b * blk < fs * 0.5 ? (rnd.nextFloat() * 2 - 1) * 0.3f : 0.0f; l[(size_t) i] = x; r[(size_t) i] = x; inE += x * x; }
+            rv.process (l.data(), r.data(), blk);
+            for (int i = 0; i < blk; ++i) e += l[(size_t) i] * l[(size_t) i];
+            outE += e; tail.push_back (10 * std::log10 (e / blk + 1e-20));
+        }
+        int t60 = 0; const double ref = tail[(size_t) (0.5 * fs / blk)];
+        for (size_t i = (size_t) (0.5 * fs / blk); i < tail.size(); ++i) if (tail[i] > ref - 30.0) t60 = (int) i;
+        std::printf ("hall reverb          : out/in energy %5.1f dB, -30 dB after %.2f s (x2 = RT60 %.1f s, set 2.3)\n",
+                     10 * std::log10 (outE / inE), (t60 - 0.5 * fs / blk) * blk / fs, 2 * (t60 - 0.5 * fs / blk) * blk / fs);
+    }
+    {
         Rig r;
         std::printf ("music through        : %6.1f dB\n", r.run (2.0).rmsDb());
 
@@ -100,18 +118,18 @@ int main()
 
         // effects: each knob, then KILL with pads 5 + 8; the tail must keep ringing when the music stops
         r.cc (10, 74, 76); r.cc (10, 75, 64);   // K5 SIZE/FEEDBACK 60 %, K6 TIME 50 %
-        for (int k : { 2, 3, 6, 7 })   // K3 K4 K7 K8 = the send FX
+        for (int k : { 2, 3, 6, 7 })   // K3 LPF, K4 K7 K8 = the send FX
         {
             r.cc (10, 70 + k, 100); m = r.run (2.0);
             std::printf ("K%d %-15s : %6.1f dB rms, %5.1f dB peak\n", k + 1, knobLabel (0, k), m.rmsDb(), m.peakDb());
             r.cc (10, 70 + k, 0); r.run (1.0);
         }
         // maximum feedback: the repeats must keep going when the send is closed (like the V10), until KILL
-        r.cc (10, 74, 127); r.cc (10, 72, 110); r.run (1.0); r.cc (10, 72, 0);
+        r.cc (10, 74, 127); r.cc (10, 73, 110); r.run (1.0); r.cc (10, 73, 0);   // long delay at max feedback
         r.track.on = false; auto inf = r.run (4.0); r.track.on = true;
         std::printf ("feedback max         : repeats after closing the send %5.1f dB (should still sound)\n", inf.rmsDb());
         r.cc (10, 74, 76);
-        r.cc (10, 72, 110); r.cc (10, 73, 100); r.cc (10, 76, 90); r.run (2.0);
+        r.cc (10, 77, 110); r.cc (10, 73, 100); r.cc (10, 76, 90); r.run (2.0);
         double cpu = 0; r.run (4.0, &cpu);
         std::printf ("CPU (3 effects + music): %.1f %% of one core\n", cpu);
         r.track.on = false;
@@ -158,25 +176,27 @@ int main()
         {
             const int st = r.p.getPatternSteps();
             r.note (12, 57, true); r.note (12, 58, true); r.note (12, 57, false); r.note (12, 58, false); r.run (0.05);
-            std::printf ("PAD 6+7 combo        : sounds only %s, steps unchanged %s\n", r.p.isSoundsOnly() ? "yes" : "NO", r.p.getPatternSteps() == st ? "yes" : "NO");
+            std::printf ("PAD 6+7 combo        : INPUT %s (expect off), steps unchanged %s\n", r.p.fxInputOn() ? "ON" : "off", r.p.getPatternSteps() == st ? "yes" : "NO");
             r.note (13, 64, true); r.note (13, 64, false); r.cc (13, 100, 64); r.run (0.05);
-            std::printf ("GLOBAL program       : program %d (expect 3), sounds only %s (expect no), master %s\n", r.p.getProgram(), r.p.isSoundsOnly() ? "YES" : "no", r.p.getKnobText (3, 0).toRawUTF8());
+            std::printf ("GLOBAL program       : program %d (expect 3), INPUT %s (expect on), master %s\n", r.p.getProgram(), r.p.fxInputOn() ? "on" : "OFF", r.p.getKnobText (3, 0).toRawUTF8());
             r.cc (13, 100, 114); r.note (12, 52, true); r.note (12, 52, false); r.run (0.05); r.note (12, 52, true); r.note (12, 52, false); r.run (0.05);
         }
-        r.p.killFx(); r.run (2.5); m = r.run (2.0);   // the last hit rings out (DECAY at 100 %)
+        const float tremBefore = r.p.getKnobValue (1, 5);
+        r.p.killFx(); r.run (2.5);
+        std::printf ("KILL keeps TREMOLO   : %.2f -> %.2f (expect equal)\n", tremBefore, r.p.getKnobValue (1, 5)); m = r.run (2.0);   // the last hit rings out (DECAY at 100 %)
         std::printf ("KILL (CC) all        : pattern after kill %6.1f dB (expect silent)\n", m.rmsDb());
         r.cc (12, 90, 0); r.track.on = true;
 
         // switch: in SONS SEULS the music passes untouched whatever the effect sends
         {
             Rig a, b;
-            for (auto* x : { &a, &b }) x->p.apvts.getParameter (id::fxTarget)->setValueNotifyingHost (1.0f);
+            for (auto* x : { &a, &b }) x->p.apvts.getParameter (id::fxInput)->setValueNotifyingHost (0.0f);
             b.cc (10, 77, 120); b.cc (10, 76, 120);   // K8 reverb + K7 dub echo sends wide open on b
             a.run (1.0); b.run (1.0);
             const auto ma = a.run (3.0), mb = b.run (3.0);
-            std::printf ("SONS SEULS           : music %6.1f dB, with FX sends %6.1f dB (expect equal)\n", ma.rmsDb(), mb.rmsDb());
-            b.p.apvts.getParameter (id::fxTarget)->setValueNotifyingHost (0.0f); b.run (1.0);
-            std::printf ("MUSIQUE + SONS       : with FX sends %6.1f dB (expect louder/wetter)\n", b.run (3.0).rmsDb());
+            std::printf ("INPUT off            : music %6.1f dB, with FX sends %6.1f dB (expect equal)\n", ma.rmsDb(), mb.rmsDb());
+            b.p.apvts.getParameter (id::fxInput)->setValueNotifyingHost (1.0f); b.run (1.0);
+            std::printf ("INPUT on             : with FX sends %6.1f dB (expect louder/wetter)\n", b.run (3.0).rmsDb());
         }
 
         r.clockBpm = 128.0; r.run (2.0);
@@ -233,7 +253,7 @@ int main()
         r.run (4.0);
         set (id::ppSound, 0.0f); set (id::ppPattern, 0.0f); set (id::ppDuck, 0.8f); set (id::ppDecay, 0.7f); r.run (4.0);
         set (id::ppKit, 1.0f); set (id::ppSound, 2.0f / 7.0f); set (id::ppPattern, 2.0f / 7.0f); set (id::ppSwing, 0.5f); set (id::ppDuck, 0.0f);
-        set (id::fxTarget, 1.0f); set (id::reverb, 0.6f); r.run (6.0);
+        set (id::fxInput, 0.0f); set (id::reverb, 0.6f); r.run (6.0);
         saveWav (r.rec, "pad-pattern.wav");
     }
 
