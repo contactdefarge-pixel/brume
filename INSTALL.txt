@@ -67,3 +67,10 @@ En bref :
 - KILL FX : CC puis un pad, ou PAD 5 + PAD 8 ensemble, ou le bouton CC à l'écran. Les queues restent.
 - SETUP LPD8 (une fois) : pour que l'app reconnaisse tout seule le programme du LPD8.
 - Synchro : Traktor envoie son horloge MIDI sur "Traktor Virtual Output", ouvert automatiquement par l'app.
+
+
+COMPILER SUR LE MAC (sans GitHub Actions)
+  1. Dézipper brume-src.zip (par exemple dans Téléchargements).
+  2. Terminal :  bash ~/Downloads/brume-src/build-mac.sh
+  La première fois : installation des outils Apple si besoin (relancer le script ensuite), puis 10 à 20 min.
+  Les fois suivantes : 1 à 3 min. Le script installe Brume et Brume Pad (apps + VST3 + AU).

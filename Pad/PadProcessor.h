@@ -74,6 +74,8 @@ namespace bpad
         if (prog == 1) return p2[pad];
         return "-";
     }
+    // Pattern Player: steps read like a page, top row first (PAD 5-8 = steps 1-4, PAD 1-4 = steps 5-8)
+    inline int stepOfPad (int pad) { return pad >= 4 ? pad - 4 : pad + 4; }
     inline float rollPerBeat (int pad) { static const float r[] = { 1.0f, 2.0f, 4.0f, 8.0f }; return r[juce::jlimit (0, 3, pad)]; }
     inline const char* soundName (int s) { static const char* n[] = { "KICK", "SNARE", "CLAP", "HAT" }; return n[juce::jlimit (0, 3, s)]; }
 }
@@ -120,7 +122,7 @@ public:
 
     // ---- state for the editor ----
     int   getProgram() const          { return program.load(); }
-    int   getLearnStep() const        { return learnStep.load(); }   // 0 none, 1/2 P1 pad/knob, 3/4 P2, 5/6 P3
+    int   getLearnStep() const        { return learnStep.load(); }   // 0 none, 1/2 P1 pad/knob, 3/4 P2, 5/6 P3, 7 P3 PROG CHNG pad 1
     bool  isLearned (int p) const     { return maps[(size_t) p].learned; }
     int   getSyncSource() const       { return syncSource.load(); }   // 0 internal, 1 MIDI clock, 2 host, 3 Ableton Link
     int   getLinkPeers() const        { return linkPeers.load(); }
@@ -182,7 +184,7 @@ private:
     pad::pp::Kits ppKits;
     std::array<station::SampleVoice, 6> ppVoices; int nextPP = 0;
     std::atomic<int> ppSteps { 0x1111 }, ppPage { 0 }, ppPlayStep { -1 };
-    int lastPattern = -1; juce::int64 lastPPStep = -1; float duckEnv = 0.0f;
+    int lastPattern = -1; int stepsBeforeCombo = 0; std::atomic<int> pcBase { 0 }; juce::int64 lastPPStep = -1; float duckEnv = 0.0f;
     juce::AudioBuffer<float> musicBuf;
     brume::FdnReverb reverbFx;
     juce::AudioBuffer<float> revBuf;

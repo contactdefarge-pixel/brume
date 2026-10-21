@@ -130,6 +130,7 @@ int main()
         r.note (10, 36, true); r.run (0.05); r.cc (10, 70, 5); r.run (0.05);
         r.note (11, 44, true); r.run (0.05); r.cc (11, 80, 5); r.run (0.05);
         r.note (12, 52, true); r.run (0.05); r.cc (12, 90, 5); r.run (0.05);
+        r.pending.addEvent (juce::MidiMessage::programChange (12, 0), 0); r.run (0.05);   // PROG CHNG + PAD 1
         std::printf ("setup                : step %d, P1 %s, P2 %s, P3 %s\n", r.p.getLearnStep(), r.p.isLearned (0) ? "ok" : "NO", r.p.isLearned (1) ? "ok" : "NO", r.p.isLearned (2) ? "ok" : "NO");
         r.note (11, 48, true); r.note (11, 48, false); r.run (0.3);   // PAD 5 of program 2 = Brume ON
         std::printf ("program detection    : program %d (expect 1), Brume on %s\n", r.p.getProgram() + 1 - 1, r.p.isBrumeOn() ? "yes" : "NO");
@@ -141,17 +142,19 @@ int main()
         // program 3: Pattern Player. NOTE-mode pad = steps 1-8, PROG CHNG-mode pad = steps 9-16
         r.cc (11, 84, 0); r.note (11, 48, true); r.note (11, 48, false); r.run (0.05);   // Brume off
         const int before = r.p.getPatternSteps();
-        r.note (12, 53, true); r.note (12, 53, false); r.run (0.05);   // PAD 2 -> step 2
+        r.note (12, 53, true); r.note (12, 53, false); r.run (0.05);   // PAD 2 (bottom row) -> step 6
         const int afterNote = r.p.getPatternSteps();
-        r.pending.addEvent (juce::MidiMessage::programChange (12, 2), 0); r.run (0.05);   // PAD 3 in PROG CHNG -> step 11
+        r.pending.addEvent (juce::MidiMessage::programChange (12, 4), 0); r.run (0.05);   // PAD 5 in PROG CHNG -> step 9
         const int afterPC = r.p.getPatternSteps();
-        std::printf ("P3 steps             : program %d (expect 2), step 2 %s, step 11 %s, page %d (expect 1)\n", r.p.getProgram(),
-                     ((afterNote ^ before) == (1 << 1)) ? "toggled" : "NO", ((afterPC ^ afterNote) == (1 << 10)) ? "toggled" : "NO", r.p.getPatternPage());
+        std::printf ("P3 steps             : program %d (expect 2), step 6 %s, step 9 %s, page %d (expect 1)\n", r.p.getProgram(),
+                     ((afterNote ^ before) == (1 << 5)) ? "toggled" : "NO", ((afterPC ^ afterNote) == (1 << 8)) ? "toggled" : "NO", r.p.getPatternPage());
         r.track.on = false; r.run (1.0);
         m = r.run (2.0);
         std::printf ("P3 volume 0          : %6.1f dB (silent)\n", m.rmsDb());
         r.cc (12, 90, 100); m = r.run (2.0);
         std::printf ("P3 pattern playing   : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
+        r.p.killFx(); r.run (0.3); m = r.run (2.0);
+        std::printf ("KILL (CC) all        : pattern after kill %6.1f dB (expect silent)\n", m.rmsDb());
         r.cc (12, 90, 0); r.track.on = true;
 
         // switch: in SONS SEULS the music passes untouched whatever the effect sends
@@ -201,6 +204,15 @@ int main()
         snap ("pad-p3.png");
         r.p.setPatternPage (1); r.run (0.1);
         snap ("pad-p3b.png");
+    }
+    // tremolo synced to the MIDI clock while K7 TEMPO sweeps across the division boundaries (must not cut)
+    {
+        Rig r; r.track.on = false; r.recording = true; r.clockBpm = 124.0;
+        r.p.selectProgram (1);
+        r.p.knobFromScreen (4, 0.7f, 1); r.p.knobFromScreen (5, 0.8f, 1); r.p.knobFromScreen (0, 0.0f, 1);
+        r.p.padFromScreen (4, true, 1); r.run (2.0);
+        for (int i = 0; i <= 120; ++i) { r.p.knobFromScreen (6, 0.7f * (float) i / 120.0f, 1); r.run (0.1); }
+        saveWav (r.rec, "pad-trem-sweep.wav");
     }
     // Pattern Player demo: 909 hats offbeat over the track with duck, then RMX clap backbeat in SONS SEULS
     {

@@ -188,15 +188,17 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
     const int ch = m.getChannel();
     if (m.isProgramChange())
     {
+        if (learnStep.load() == 7) { pcBase.store (m.getProgramChangeNumber()); program.store (2); learnStep.store (0); setEvent ("SETUP OK"); return; }
         // pads in PROG CHNG mode: steps 9-16 of the Pattern Player (program 3)
         const auto& m3 = maps[2];
         if (m3.learned && ch == m3.padChannel) program.store (2);
         if (program.load() == 2)
         {
             ppPage.store (1);
-            const int step = 8 + (m.getProgramChangeNumber() % 8);
+            const int pad = ((m.getProgramChangeNumber() - pcBase.load()) % 8 + 8) % 8;
+            const int step = 8 + stepOfPad (pad);
             ppSteps.store (ppSteps.load() ^ (1 << step));
-            padHit[(size_t) (step - 8)].store (uiTime());
+            padHit[(size_t) pad].store (uiTime());
             setEvent ("STEP " + juce::String (step + 1));
         }
         return;
@@ -212,6 +214,7 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
 
     // ---- LPD8 setup: learn where each program sends its pads and knobs ----
     const int step = learnStep.load();
+    if (step == 7) return;   // waiting for a Program Change (PROG CHNG + PAD 1)
     if (step > 0)
     {
         auto& mp = maps[(size_t) ((step - 1) / 2)];
@@ -219,7 +222,7 @@ void PadProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 samplePos
         if ((step % 2 == 0) && m.isController())
         {
             mp.knobChannel = ch; mp.knobCC0 = m.getControllerNumber(); mp.learned = true;
-            learnStep.store (step == 6 ? 0 : step + 1);
+            learnStep.store (step + 1);   // after 6: PROG CHNG pad 1 of program 3
             return;
         }
         return;
@@ -271,11 +274,12 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
     if (down && (pad == 4 || pad == 7))
     {
         const double now = (double) sampleCounter / fs;
-        if (now - std::max (lastPad5Time, lastPad8Time) > 0.15) { soundBeforeCombo = apvts.getRawParameterValue (id::sound)->load(); activeBeforeCombo = activeSound.load(); }
+        if (now - std::max (lastPad5Time, lastPad8Time) > 0.15) { soundBeforeCombo = apvts.getRawParameterValue (id::sound)->load(); activeBeforeCombo = activeSound.load(); stepsBeforeCombo = ppSteps.load(); }
         (pad == 4 ? lastPad5Time : lastPad8Time) = now;
         if (std::abs (lastPad5Time - lastPad8Time) < 0.15)
         {
             if (prog == 0) { setParam (apvts, id::sound, soundBeforeCombo); activeSound.store (activeBeforeCombo); }   // the combo is not a sound choice
+            if (prog == 2) ppSteps.store (stepsBeforeCombo);                                                        // nor a step edit
             doKill();
             return;
         }
@@ -315,7 +319,7 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
     if (prog == 2)
     {
         if (! down) return;
-        const int step = ppPage.load() * 8 + pad;   // the page shown (screen) or set by NOTE / PROG CHNG
+        const int step = ppPage.load() * 8 + stepOfPad (pad);   // the page shown (screen) or set by NOTE / PROG CHNG
         ppSteps.store (ppSteps.load() ^ (1 << step));
         setEvent ("STEP " + juce::String (step + 1) + ((ppSteps.load() >> step) & 1 ? " ON" : " OFF"));
         return;
@@ -346,6 +350,8 @@ void PadProcessor::doKill()
 {
     for (int k = 2; k <= 5; ++k) fx[(size_t) k].kill();
     setParam (brumeEngine.apvts, brume::id::on, 0.0f);   // Brume stops, its tail fades with LENGTH
+    activeSound.store (-1);                              // X-PAD roll stops
+    setParam (apvts, id::ppVolume, 0.0f);                // Pattern Player stops (turn K1 of program 3 to bring it back)
     killTime.store (uiTime());
     setEvent ("KILL FX");
 }
@@ -624,6 +630,7 @@ void PadProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (map, nullptr);
     state.setProperty ("program", program.load(), nullptr);
     state.setProperty ("ppSteps", ppSteps.load(), nullptr);
+    state.setProperty ("pcBase", pcBase.load(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
 }
 
@@ -644,6 +651,7 @@ void PadProcessor::setStateInformation (const void* data, int sizeInBytes)
         mp.padNote0 = e.getProperty ("note0", 36); mp.knobChannel = e.getProperty ("knobCh", 0); mp.knobCC0 = e.getProperty ("cc0", 70);
     }
     program.store (juce::jlimit (0, numProgs - 1, (int) state.getProperty ("program", 0)));
+    pcBase.store ((int) state.getProperty ("pcBase", 0));
     if (state.hasProperty ("ppSteps")) { ppSteps.store ((int) state.getProperty ("ppSteps")); lastPattern = -2; }
     state.removeChild (b, nullptr);
     state.removeChild (map, nullptr);

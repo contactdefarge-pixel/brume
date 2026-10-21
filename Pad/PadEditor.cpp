@@ -64,7 +64,7 @@ namespace
         }
         if (prog == 2)
         {
-            const int step = p.getPatternPage() * 8 + pad;
+            const int step = p.getPatternPage() * 8 + stepOfPad (pad);
             const bool on = (p.getPatternSteps() >> step) & 1;
             const bool here = p.getPatternPlayStep() == step;
             if (here) return on ? juce::Colours::white : juce::Colour (0xff606060);
@@ -138,8 +138,9 @@ namespace
 "Une boîte à rythme de 16 pas (une mesure en doubles-croches), calée sur le tempo et qui repart toujours sur le 1er temps, "
 "comme le Pattern Player de Traktor.\n\n"
 "LES 16 PAS AVEC 8 PADS\n"
-"   Mode NOTE (bouton NOTE du LPD8) : les pads sont les pas 1 à 8 (1re moitié de la mesure).\n"
-"   Mode PROG CHNG (bouton PROG CHNG du LPD8) : les mêmes pads sont les pas 9 à 16.\n"
+"   Les pas se lisent comme une page : rangée du haut puis rangée du bas.\n"
+"   Mode NOTE (bouton NOTE du LPD8) : PAD 5 à 8 = pas 1 à 4, PAD 1 à 4 = pas 5 à 8 (1re moitié de la mesure).\n"
+"   Mode PROG CHNG (bouton PROG CHNG du LPD8) : les mêmes pads = pas 9 à 12 (haut) et 13 à 16 (bas).\n"
 "   Un appui allume / éteint le pas. Le pas en cours de lecture clignote en blanc ; les pas rouges tombent sur les temps.\n"
 "   À l'écran : NOTE / PROG CHNG choisissent la moitié affichée, puis cliquer sur les pads.\n\n"
 "BOUTONS\n"
@@ -155,7 +156,7 @@ namespace
 "ASTUCE : choisir CL HAT + PATTERN 2 (contretemps) pour ajouter un charley sur un morceau, ou CLAP + PATTERN 3 avant un drop.");
             case 4: return u (
 "KILL FX\n\n"
-"Coupe tous les effets d'un coup : short delay, long delay, dub echo, réverbe, et Brume. Les échos et réverbes "
+"Coupe tout d'un coup : short delay, long delay, dub echo, réverbe, Brume (bruit blanc), le roulement X-PAD et le Pattern Player (son K1 VOLUME repasse à 0). Les échos et réverbes "
 "gardent leur queue (le feedback est réduit pour qu'elle s'éteigne), rien ne s'arrête brutalement.\n\n"
 "TROIS FAÇONS DE LE DÉCLENCHER\n"
 "   1. Sur le LPD8 : appuyer sur CC puis sur n'importe quel pad (en mode CC les pads envoient des messages CC, "
@@ -171,7 +172,8 @@ namespace
 "   1. Cliquer sur SETUP LPD8.\n"
 "   2. Sur le LPD8 : PROGRAM + PAD 1 (programme 1), puis appuyer sur PAD 1, puis tourner K1.\n"
 "   3. PROGRAM + PAD 2 (programme 2), puis appuyer sur PAD 1, puis tourner K1.\n"
-"   4. PROGRAM + PAD 3 (programme 3), puis appuyer sur PAD 1, puis tourner K1.\n"
+"   4. PROGRAM + PAD 3 (programme 3), puis appuyer sur PAD 1, puis tourner K1, puis PROG CHNG et PAD 1 "
+"(pour que les pas 9 à 16 tombent sur les bons pads), puis revenir en NOTE.\n"
 "C'est tout. Le LPD8 doit être en mode NOTE (bouton NOTE).\n\n"
 "Sans SETUP, Brume Pad fonctionne quand même avec les réglages d'usine du LPD8 MK2, et le programme se choisit à l'écran.\n\n"
 "Le LPD8 et le port d'horloge de Traktor sont ouverts automatiquement par l'app (rien à cocher).");
@@ -331,9 +333,9 @@ void PadEditor::PadButton::paint (juce::Graphics& g)
     g.fillRoundedRectangle (r.reduced (4.0f), 5.0f);
 
     g.setColour (print);
-    g.setFont (labelFont (12.5f));
+    g.setFont (labelFont (prog == 2 && ! ed.programSelectMode ? 30.0f : 12.5f));
     juce::String label = ed.programSelectMode && index < 4 ? "PROGRAM " + juce::String (index + 1)
-                       : prog == 2 ? "STEP " + juce::String (ed.proc.getPatternPage() * 8 + index + 1)
+                       : prog == 2 ? juce::String (ed.proc.getPatternPage() * 8 + stepOfPad (index) + 1)
                        : juce::String (padLabel (prog, index));
     g.drawFittedText (label, r.reduced (8.0f).toNearestInt(), juce::Justification::centred, 2, 0.8f);
 }
@@ -532,6 +534,12 @@ void PadEditor::paintBody (juce::Graphics& g)
         const auto pbn = padBounds (i).toFloat();
         g.setColour (print);
         g.setFont (labelFont (9.5f));
+        if (prog == 2)   // Pattern Player: the step number replaces the pad print
+        {
+            g.setColour (orange);
+            g.drawText ("STEP", pbn.translated (0.0f, -16.0f).withHeight (14.0f), juce::Justification::centredLeft);
+            continue;
+        }
         g.drawText ("PAD " + juce::String (i + 1), pbn.translated (0.0f, -16.0f).withHeight (14.0f), juce::Justification::centredLeft);
         if (i < 4)
         {
@@ -567,13 +575,14 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.setColour (juce::Colours::black);
         g.setFont (labelFont (13.0f));
         static const char* msgs[] = { "",
-            "SETUP 1/6 : sur le LPD8, PROGRAM + PAD 1, puis appuie sur PAD 1",
-            "SETUP 2/6 : programme 1, tourne K1",
-            "SETUP 3/6 : PROGRAM + PAD 2, puis appuie sur PAD 1",
-            "SETUP 4/6 : programme 2, tourne K1",
-            "SETUP 5/6 : PROGRAM + PAD 3, puis appuie sur PAD 1 (mode NOTE)",
-            "SETUP 6/6 : programme 3, tourne K1" };
-        g.drawText (juce::String::fromUTF8 (msgs[juce::jlimit (0, 6, step)]), banner, juce::Justification::centred);
+            "SETUP 1/7 : sur le LPD8, PROGRAM + PAD 1, puis appuie sur PAD 1",
+            "SETUP 2/7 : programme 1, tourne K1",
+            "SETUP 3/7 : PROGRAM + PAD 2, puis appuie sur PAD 1",
+            "SETUP 4/7 : programme 2, tourne K1",
+            "SETUP 5/7 : PROGRAM + PAD 3, puis appuie sur PAD 1 (mode NOTE)",
+            "SETUP 6/7 : programme 3, tourne K1",
+            "SETUP 7/7 : programme 3, appuie sur PROG CHNG puis sur PAD 1 (ou CANCEL si inutile)" };
+        g.drawText (juce::String::fromUTF8 (msgs[juce::jlimit (0, 7, step)]), banner, juce::Justification::centred);
     }
 
     // KILL flash

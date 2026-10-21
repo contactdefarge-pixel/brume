@@ -145,6 +145,7 @@ private:
 
     // smoothing state
     float sendGate = 0.0f, noiseGate = 0.0f, dryGain = 1.0f, sendAmt = 0.0f, noiseAmt = 0.0f, tremDepth = 0.0f;
+    int tremDivIdx = -1;
     double tremPhase = 0.0;
     std::atomic<float> tremPhaseUi { 0.0f };
     std::atomic<bool> tapReset { false };

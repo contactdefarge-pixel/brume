@@ -338,16 +338,26 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
     const auto* wL = washBuf.getReadPointer (0); const auto* wR = washBuf.getReadPointer (1);
     const double inc = rate / fs;
     if (tapReset.exchange (false) && src == 0) tremPhase = 0.0;
-    const double cyclesPerBeat = brume::division (pTempo->load()).cyclesPerBeat;
+    // division with hysteresis, so a knob resting on a boundary doesn't flip between two divisions
+    {
+        const float pos = pTempo->load() * 9.0f;
+        if (tremDivIdx < 0 || std::abs (pos - (float) tremDivIdx) > 0.62f)
+            tremDivIdx = std::max (0, std::min (9, (int) std::lround (pos)));
+    }
+    const double cyclesPerBeat = brume::division ((float) tremDivIdx / 9.0f).cyclesPerBeat;
     const double beatInc = bpm / 60.0 / fs;
+    const double lockCoef = 1.0 / (0.12 * fs);   // phase pulled onto the beat grid in ~0.1 s, never jumps
     for (int i = 0; i < n; ++i)
     {
         tremDepth = tTrem + (tremDepth - tTrem) * cParam;
         if (src > 0)
         {
-            // locked to the beat grid: the cycle restarts on the beat
+            // locked to the beat grid, but phase-continuous: changing division (or tempo) glides instead of cutting
             const double c = (beatAtStart + i * beatInc) * cyclesPerBeat;
-            tremPhase = c - std::floor (c);
+            double err = (c - std::floor (c)) - tremPhase;
+            err -= std::round (err);
+            tremPhase += beatInc * cyclesPerBeat + err * std::min (1.0, lockCoef * (std::abs (err) > 0.25 ? 4.0 : 1.0));
+            tremPhase -= std::floor (tremPhase);
         }
         else
         {
