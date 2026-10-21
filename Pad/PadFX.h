@@ -78,17 +78,34 @@ struct Crusher
     }
 };
 
-// One echo with a coloured feedback path: 0 = high-pass echo, 1 = low-pass echo, 2 = crush echo, 3 = clean delay
+// small allpass used to smear the dub echo repeats
+struct Diffuser
+{
+    std::vector<float> b; int pos = 0; float g = 0.5f;
+    void prepare (int len, float gain) { b.assign ((size_t) std::max (2, len), 0.0f); pos = 0; g = gain; }
+    void clear() { std::fill (b.begin(), b.end(), 0.0f); }
+    inline float tick (float x) { const float d = b[(size_t) pos]; const float v = x + g * d; b[(size_t) pos] = v; if (++pos >= (int) b.size()) pos = 0; return d - g * v; }
+};
+
+// One echo with a coloured feedback path: 0 = high-pass echo, 1 = low-pass echo, 2 = crush echo, 3 = clean delay,
+// 4 = dub echo (dark, saturated, diffused repeats, like the DJM-V10 / 900NXS2 dub echo)
 struct Echo
 {
     XfadeDelay line;
-    Svf fbL, fbR;
+    Svf fbL, fbR, dubHpL, dubHpR;
+    Diffuser difL1, difL2, difR1, difR2;
     Crusher crush;
     int kind = 3;
     float fs = 44100.0f;
 
-    void prepare (double sampleRate, int k) { fs = (float) sampleRate; kind = k; line.prepare (sampleRate, 4.0); }
-    void clear() { line.clear(); fbL.reset(); fbR.reset(); }
+    void prepare (double sampleRate, int k)
+    {
+        fs = (float) sampleRate; kind = k; line.prepare (sampleRate, 4.0);
+        difL1.prepare ((int) (0.0071 * sampleRate), 0.55f); difL2.prepare ((int) (0.0113 * sampleRate), 0.5f);
+        difR1.prepare ((int) (0.0079 * sampleRate), 0.55f); difR2.prepare ((int) (0.0127 * sampleRate), 0.5f);
+        dubHpL.set (fs, 180.0f, 0.7f); dubHpR.set (fs, 180.0f, 0.7f);
+    }
+    void clear() { line.clear(); fbL.reset(); fbR.reset(); difL1.clear(); difL2.clear(); difR1.clear(); difR2.clear(); }
 
     // filterHz: feedback filter cutoff; fb: feedback amount; returns the wet signal
     inline void process (float inL, float inR, float fb, float colour, float& outL, float& outR)
@@ -101,6 +118,11 @@ struct Echo
             case 0: fl = fbL.tick (fl).hp; fr = fbR.tick (fr).hp; break;
             case 1: fl = fbL.tick (fl).lp; fr = fbR.tick (fr).lp; break;
             case 2: crush.process (fl, fr, colour); fl = fbL.tick (fl).lp; fr = fbR.tick (fr).lp; break;
+            case 4:
+                fl = difL2.tick (difL1.tick (dubHpL.tick (fbL.tick (fl).lp).hp));
+                fr = difR2.tick (difR1.tick (dubHpR.tick (fbR.tick (fr).lp).hp));
+                fl = std::tanh (fl * 1.4f) / 1.4f; fr = std::tanh (fr * 1.4f) / 1.4f;
+                break;
             default: fl = fbL.tick (fl).lp; fr = fbR.tick (fr).lp; break;
         }
         // soft limit in the loop so high feedback never runs away

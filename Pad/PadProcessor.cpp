@@ -18,6 +18,7 @@ PadProcessor::PadProcessor()
       apvts (*this, nullptr, "PAD", createLayout())
 {
     brumeEngine.setRevoloNoise (true);
+    brumeEngine.setSlowNoiseDown (true);
     for (auto& d : padDown) d.store (false);
     for (auto& h : padHit) h.store (-10.0);
     for (auto& k : fxKilledUi) k.store (false);
@@ -59,16 +60,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PadProcessor::createLayout()
 
     add (id::drums, "Drums Volume", 0.8f, pct);
     add (id::pitch, "Drums Pitch", 0.5f, [] (float v, int) { const int s = juce::roundToInt (-12.0f + 24.0f * v); return (s > 0 ? "+" : "") + juce::String (s) + " st"; });
-    add (id::delay, "Delay Short/Long", 0.0f, [] (float v, int)
-    {
-        if (v < 0.01f) return juce::String ("OFF");
-        return juce::String (v < 0.5f ? "SHORT " : "LONG ") + juce::String (juce::roundToInt (v * 100.0f)) + " %";
-    });
-    add (id::reverb, "Reverb", 0.0f, fxText);
-    add (id::hpfEcho, "HPF Echo", 0.0f, fxText);
-    add (id::lpfEcho, "LPF Echo", 0.0f, fxText);
-    add (id::crushEcho, "Crush Echo", 0.0f, fxText);
-    add (id::noise, "White Noise", 0.0f, fxText);
+    add (id::shortDelay, "Short Delay Send", 0.0f, fxText);
+    add (id::longDelay, "Long Delay Send", 0.0f, fxText);
+    add (id::dubEcho, "Dub Echo Send", 0.0f, fxText);
+    add (id::reverb, "Reverb Send", 0.0f, fxText);
+    add (id::size, "Size / Feedback", 0.5f, pct);
+    add (id::time, "Time", 0.5f, pct);
     add (id::sound, "Drum Sound", 1.0f / 3.0f, [] (float v, int) { return juce::String (soundName ((int) std::lround (v * 3.0f))); });
     ps.push_back (std::make_unique<F> (juce::ParameterID { id::bpm, 1 }, "Tempo (no sync)", juce::NormalisableRange<float> (60.0f, 200.0f, 0.1f), 124.0f,
                                        A().withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " BPM"; })));
@@ -92,11 +89,9 @@ void PadProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     brumeEngine.setRateAndBufferSizeDetails (fs, maxBlock);
     brumeEngine.prepareToPlay (fs, maxBlock);
     kit.prepare (fs);
-    delayFx.prepare (fs, 3); hpfEcho.prepare (fs, 0); lpfEcho.prepare (fs, 1); crushEcho.prepare (fs, 2);
-    reverbFx.prepare (fs); noiseWash.prepare (fs);
-    noiseWash.setParameters (3.5f, 0.75f, 0.45f, true);
-    noiseGen.prepare ((float) fs);
-    revBuf.setSize (2, maxBlock); washBuf.setSize (2, maxBlock);
+    shortFx.prepare (fs, 3); longFx.prepare (fs, 3); dubFx.prepare (fs, 4);
+    reverbFx.prepare (fs);
+    revBuf.setSize (2, maxBlock);
     queue.reset (fs);
     queueReady.store (true);
 }
@@ -308,7 +303,7 @@ void PadProcessor::handleKnob (int prog, int knob, float v)
 
 void PadProcessor::doKill()
 {
-    for (int k = 2; k < numKnobs; ++k) fx[(size_t) k].kill();
+    for (int k = 2; k <= 5; ++k) fx[(size_t) k].kill();
     setParam (brumeEngine.apvts, brume::id::on, 0.0f);   // Brume stops, its tail fades with LENGTH
     killTime.store (uiTime());
     setEvent ("KILL FX");
@@ -329,8 +324,8 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     if (n == 0) return;
     for (int c = 2; c < buffer.getNumChannels(); ++c) buffer.clear (c, 0, n);
     if (getTotalNumInputChannels() == 0) buffer.clear();
-    if (revBuf.getNumSamples() < n) { revBuf.setSize (2, n, false, false, true); washBuf.setSize (2, n, false, false, true); }
-    revBuf.clear(); washBuf.clear();
+    if (revBuf.getNumSamples() < n) revBuf.setSize (2, n, false, false, true);
+    revBuf.clear();
 
     const juce::int64 blockStart = sampleCounter;
     clockForBrume.clear();
@@ -383,10 +378,9 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     const double beatAtStart = beat;
 
     // ---- effect knobs follow their parameters (screen, controller, host automation); a KILL holds until the knob moves ----
-    static const char* fxIds[numKnobs] = { id::drums, id::pitch, id::delay, id::reverb, id::hpfEcho, id::lpfEcho, id::crushEcho, id::noise };
     for (int k = 2; k < numKnobs; ++k)
     {
-        const float pv = apvts.getRawParameterValue (fxIds[k])->load();
+        const float pv = apvts.getRawParameterValue (p1KnobId (k))->load();
         if (std::abs (pv - fx[(size_t) k].target) > 1.0e-4f) fx[(size_t) k].set (pv);
         fxKilledUi[(size_t) k].store (fx[(size_t) k].killed && fx[(size_t) k].target > 0.01f);
     }
@@ -426,76 +420,53 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     // ---- 2) program 2: Brume (noise voiced like the Revolo, reverb, tremolo), synced on the same clock ----
     brumeEngine.processBlock (buffer, clockForBrume);
 
-    // ---- 3) program 1 effects ----
+    // ---- 3) program 1: DJM-V10 style send effects (SHORT DELAY, LONG DELAY, DUB ECHO, REVERB) ----
+    // K3-K6 = send to each effect (returns are fixed, so tails ring when a send is closed or KILLed),
+    // K7 = SIZE / FEEDBACK (feedback of the delays and echo, size of the reverb), K8 = TIME
     const double spb = 60.0 / bpm * fs;   // samples per beat
-    const float aT3 = fx[3].target;
-    reverbFx.setParameters (1.2f + 7.0f * aT3, 0.35f + 0.5f * aT3, 0.75f);   // length follows the knob, not the kill: tails keep their length
+    const float size = fx[6].target, timeK = fx[7].target;
     {
-        const float d = fx[2].target;
-        static const double shortBeats[] = { 1.0 / 16.0, 3.0 / 32.0, 1.0 / 8.0 }, longBeats[] = { 0.25, 0.375, 0.5, 0.75, 1.0 };
-        const double beats = d < 0.5 ? shortBeats[juce::jlimit (0, 2, (int) (d / 0.5 * 3.0))] : longBeats[juce::jlimit (0, 4, (int) ((d - 0.5) / 0.5 * 5.0))];
-        delayFx.line.setDelay (beats * spb);
-        delayFx.setFilter (d < 0.5 ? 9000.0f : 6000.0f);
+        static const double shortBeats[] = { 1.0 / 32.0, 1.0 / 16.0, 3.0 / 32.0, 1.0 / 8.0 };
+        static const double longBeats[]  = { 0.25, 0.375, 0.5, 0.75, 1.0 };
+        static const double dubBeats[]   = { 0.125, 0.1875, 0.25, 0.375, 0.5, 0.75, 1.0 };
+        auto pick = [timeK] (const double* t, int count) { return t[juce::jlimit (0, count - 1, (int) (timeK * (float) count))]; };
+        shortFx.line.setDelay (pick (shortBeats, 4) * spb);
+        longFx.line.setDelay (pick (longBeats, 5) * spb);
+        dubFx.line.setDelay (pick (dubBeats, 7) * spb);
+        shortFx.setFilter (12000.0f);
+        longFx.setFilter (8000.0f);
+        dubFx.setFilter (2600.0f, 0.8f);
+        // time = small and short -> long and present; size = small room -> huge empty room with more low end
+        reverbFx.setParameters (0.6f * std::pow (15.0f, timeK), size, 0.75f - 0.3f * size);
     }
-    hpfEcho.line.setDelay (0.5 * spb);
-    lpfEcho.line.setDelay (0.75 * spb);
-    crushEcho.line.setDelay (0.25 * spb);
-    hpfEcho.setFilter (150.0f + 1100.0f * fx[4].target);
-    lpfEcho.setFilter (3000.0f * std::pow (0.12f, fx[5].target));
-    crushEcho.setFilter (7000.0f);
+    // feedback: low (repeats die fast) -> maximum (repeats go on until the effect is cut). A KILL caps it so tails end.
+    auto feedback = [&] (int k) { const float f = 0.1f + 0.88f * size; return fx[(size_t) k].killed ? std::min (f, 0.5f) : f; };
+    const float fbShort = feedback (2), fbLong = feedback (3), fbDub = std::min (0.97f, feedback (4) * 1.02f);
 
     const float smoothFast = 1.0f - std::exp (-1.0f / (0.03f * (float) fs));
-    const float smoothNoise = 1.0f - std::exp (-1.0f / (0.35f * (float) fs));
     auto* rl = revBuf.getWritePointer (0); auto* rr = revBuf.getWritePointer (1);
-    auto* wl = washBuf.getWritePointer (0); auto* wr = washBuf.getWritePointer (1);
     for (int i = 0; i < n; ++i)
     {
-        for (int k = 2; k < numKnobs; ++k)
-            sm[k] += (fx[(size_t) k].effective() - sm[k]) * (k == 7 ? smoothNoise : smoothFast);
+        for (int k = 2; k <= 5; ++k)
+            sm[k] += (fx[(size_t) k].effective() - sm[k]) * smoothFast;
 
-        float l = L[i], r = R[i];
+        const float l = L[i], r = R[i];
+        float el = 0.0f, er = 0.0f, o0, o1;
+        shortFx.process (l * sm[2], r * sm[2], fbShort, 0.0f, o0, o1);  el += o0 * 0.8f;  er += o1 * 0.8f;
+        longFx.process (l * sm[3], r * sm[3], fbLong, 0.0f, o0, o1);    el += o0 * 0.8f;  er += o1 * 0.8f;
+        dubFx.process (l * sm[4], r * sm[4], fbDub, 0.0f, o0, o1);      el += o0 * 0.95f; er += o1 * 0.95f;
 
-        // HPF / LPF sweep on the music (part of the filter echoes)
-        if (i % 16 == 0)
-        {
-            hpHz = 20.0f * std::pow (60.0f, sm[4]);   // up to 1.2 kHz: thinner, never gone
-            lpHz = 20000.0f * std::pow (0.02f, sm[5]);
-            for (int c = 0; c < 2; ++c) { dryHp[c].set ((float) fs, hpHz, 0.75f); dryLp[c].set ((float) fs, lpHz, 0.75f); }
-        }
-        if (sm[4] > 0.002f) { l = dryHp[0].tick (l).hp; r = dryHp[1].tick (r).hp; }
-        if (sm[5] > 0.002f) { l = dryLp[0].tick (l).lp; r = dryLp[1].tick (r).lp; }
-        dryCrush.process (l, r, std::max (0.0f, sm[6] - 0.55f) * 1.6f);
-
-        // echoes: the knob opens the send, the wet return is fixed so tails ring out after a kill
-        float el, er, o0, o1;
-        delayFx.process (l * std::min (1.0f, sm[2] * 2.5f), r * std::min (1.0f, sm[2] * 2.5f), 0.25f + 0.4f * fx[2].target, 0.0f, o0, o1);
-        el = o0 * 0.7f; er = o1 * 0.7f;
-        hpfEcho.process (l * sm[4] * 1.6f, r * sm[4] * 1.6f, 0.5f + 0.35f * fx[4].target, 0.0f, o0, o1);
-        el += o0 * 1.1f; er += o1 * 1.1f;
-        lpfEcho.process (l * sm[5], r * sm[5], 0.45f + 0.35f * fx[5].target, 0.0f, o0, o1);
-        el += o0 * 0.85f; er += o1 * 0.85f;
-        crushEcho.process (l * sm[6], r * sm[6], 0.4f + 0.35f * fx[6].target, 0.3f + 0.7f * fx[6].target, o0, o1);
-        el += o0 * 0.85f; er += o1 * 0.85f;
-
-        // white noise (Revolo voicing) and its wash
-        float nl = 0.0f, nr = 0.0f;
-        if (sm[7] > 1.0e-4f) { noiseGen.tick (nl, nr); nl *= sm[7] * 0.55f; nr *= sm[7] * 0.55f; }
-        wl[i] = nl * 0.8f; wr[i] = nr * 0.8f;
-
-        // reverb send (music + echoes)
-        rl[i] = (l + el * 0.5f) * sm[3] * 0.8f;
-        rr[i] = (r + er * 0.5f) * sm[3] * 0.8f;
-
-        L[i] = l + el + nl;
-        R[i] = r + er + nr;
+        rl[i] = (l * sm[5] + el * 0.25f * sm[5]) * 0.8f;
+        rr[i] = (r * sm[5] + er * 0.25f * sm[5]) * 0.8f;
+        L[i] = l + el;
+        R[i] = r + er;
     }
     reverbFx.process (rl, rr, n);
-    noiseWash.process (wl, wr, n);
     const float master = std::pow (apvts.getRawParameterValue (id::master)->load(), 2.0f) * 1.25f;
     for (int i = 0; i < n; ++i)
     {
-        L[i] = std::tanh ((L[i] + rl[i] * 1.3f + wl[i] * 1.1f) * master);
-        R[i] = std::tanh ((R[i] + rr[i] * 1.3f + wr[i] * 1.1f) * master);
+        L[i] = std::tanh ((L[i] + rl[i] * 1.4f) * master);
+        R[i] = std::tanh ((R[i] + rr[i] * 1.4f) * master);
     }
 
     sampleCounter += n;

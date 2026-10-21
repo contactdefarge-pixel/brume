@@ -99,12 +99,18 @@ int main()
         r.run (1.0);
 
         // effects: each knob, then KILL with pads 5 + 8; the tail must keep ringing when the music stops
-        for (int k = 2; k < 8; ++k)
+        r.cc (10, 76, 76); r.cc (10, 77, 64);   // SIZE/FEEDBACK 60 %, TIME 50 %
+        for (int k = 2; k < 6; ++k)
         {
             r.cc (10, 70 + k, 100); m = r.run (2.0);
             std::printf ("K%d %-15s : %6.1f dB rms, %5.1f dB peak\n", k + 1, knobLabel (0, k), m.rmsDb(), m.peakDb());
             r.cc (10, 70 + k, 0); r.run (1.0);
         }
+        // maximum feedback: the repeats must keep going when the send is closed (like the V10), until KILL
+        r.cc (10, 76, 127); r.cc (10, 72, 110); r.run (1.0); r.cc (10, 72, 0);
+        r.track.on = false; auto inf = r.run (4.0); r.track.on = true;
+        std::printf ("feedback max         : repeats after closing the send %5.1f dB (should still sound)\n", inf.rmsDb());
+        r.cc (10, 76, 76);
         r.cc (10, 72, 110); r.cc (10, 73, 100); r.cc (10, 74, 90); r.run (2.0);
         double cpu = 0; r.run (4.0, &cpu);
         std::printf ("CPU (3 effects + music): %.1f %% of one core\n", cpu);
@@ -180,11 +186,12 @@ int main()
         }
         r.note (10, 41, true); r.note (10, 41, false);           // SNARE off = drop
         knob (0, 0.8f); knob (1, 0.5f);
-        knob (4, 0.55f); r.run (1.94); knob (4, 0.0f); r.run (1.94);
-        knob (3, 0.6f); r.run (3.87); knob (3, 0.0f); r.run (1.0);
-        knob (6, 0.7f); r.run (3.87); knob (6, 0.0f);
-        knob (2, 0.8f); r.run (3.87);
-        knob (7, 0.6f); r.run (3.87);
+        knob (6, 0.6f); knob (7, 0.6f);
+        knob (4, 0.7f); r.run (1.94); knob (4, 0.0f); r.run (1.94);     // dub echo throw
+        knob (5, 0.6f); r.run (3.87); knob (5, 0.0f); r.run (1.0);      // reverb
+        knob (2, 0.6f); r.run (3.87); knob (2, 0.0f);                   // short delay
+        knob (3, 0.7f); r.run (3.87);                                   // long delay
+        knob (6, 0.95f); r.run (3.87);                                  // feedback up
         r.cc (10, 16, 100);                                        // KILL FX (pad in CC mode)
         r.run (5.0);
         saveWav (r.rec, "pad-demo.wav");

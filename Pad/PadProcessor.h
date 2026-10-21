@@ -23,15 +23,16 @@ namespace bpad
     namespace id
     {
         static constexpr const char* drums = "p1_drums";   static constexpr const char* pitch = "p1_pitch";
-        static constexpr const char* delay = "p1_delay";   static constexpr const char* reverb = "p1_reverb";
-        static constexpr const char* hpfEcho = "p1_hpf_echo"; static constexpr const char* lpfEcho = "p1_lpf_echo";
-        static constexpr const char* crushEcho = "p1_crush_echo"; static constexpr const char* noise = "p1_noise";
+        // DJM-V10 style send effects: one send knob per effect, SIZE/FEEDBACK and TIME shared
+        static constexpr const char* shortDelay = "p1_short_delay"; static constexpr const char* longDelay = "p1_long_delay";
+        static constexpr const char* dubEcho = "p1_dub_echo";       static constexpr const char* reverb = "p1_reverb";
+        static constexpr const char* size = "p1_size_feedback";     static constexpr const char* time = "p1_time";
         static constexpr const char* sound = "p1_sound";
         static constexpr const char* bpm = "bpm";          static constexpr const char* master = "master";
     }
     inline const char* p1KnobId (int k)
     {
-        static const char* ids[] = { id::drums, id::pitch, id::delay, id::reverb, id::hpfEcho, id::lpfEcho, id::crushEcho, id::noise };
+        static const char* ids[] = { id::drums, id::pitch, id::shortDelay, id::longDelay, id::dubEcho, id::reverb, id::size, id::time };
         return ids[juce::jlimit (0, 7, k)];
     }
     // Brume parameters on the knobs of program 2 (same order as the pedal)
@@ -43,7 +44,7 @@ namespace bpad
     }
     inline const char* knobLabel (int prog, int k)
     {
-        static const char* p1[] = { "DRUMS VOL", "PITCH", "DELAY S/L", "REVERB", "HPF ECHO", "LPF ECHO", "CRUSH ECHO", "WHITE NOISE" };
+        static const char* p1[] = { "DRUMS VOL", "PITCH", "SHORT DELAY", "LONG DELAY", "DUB ECHO", "REVERB", "SIZE / FEEDBACK", "TIME" };
         static const char* p2[] = { "REVERB", "CHARACTER", "LENGTH", "AIR", "NOISE", "TREMOLO", "TEMPO", "FILTER" };
         if (prog == 0) return p1[k];
         if (prog == 1) return p2[k];
@@ -154,15 +155,11 @@ private:
     float soundBeforeCombo = 1.0f / 3.0f;
 
     // effects (program 1)
-    std::array<pad::FxKnob, 8> fx;   // indices = knobs; 0 drums and 1 pitch are not effects
-    pad::Echo delayFx, hpfEcho, lpfEcho, crushEcho;
-    station::Svf dryHp[2], dryLp[2];
-    pad::Crusher dryCrush;
-    brume::FdnReverb reverbFx, noiseWash;
-    pad::RevoloNoise noiseGen;
-    juce::AudioBuffer<float> revBuf, washBuf;
-    float sm[8] {};          // smoothed effect amounts
-    float hpHz = 20.0f, lpHz = 20000.0f;
+    std::array<pad::FxKnob, 8> fx;   // indices = knobs; 2-5 are the sends (KILL acts on them)
+    pad::Echo shortFx, longFx, dubFx;
+    brume::FdnReverb reverbFx;
+    juce::AudioBuffer<float> revBuf;
+    float sm[8] {};          // smoothed send amounts
     std::array<std::atomic<bool>, 8> fxKilledUi {};
 
     // clock

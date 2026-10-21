@@ -302,7 +302,8 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
     for (int i = 0; i < n; ++i)
     {
         sendAmt  = tSend  + (sendAmt  - tSend)  * cParam;
-        noiseAmt = tNoise + (noiseAmt - tNoise) * cParam;
+        // Brume Pad: turning NOISE down fades like ON/OFF does, at the pace of the reverb tail
+        noiseAmt = tNoise + (noiseAmt - tNoise) * (slowNoiseDown && tNoise < noiseAmt ? cNoiseOff : cParam);
         sendGate  = tGate + (sendGate  - tGate) * (tGate > sendGate ? cSendOn : cSendOff);
         noiseGate = tGate + (noiseGate - tGate) * (tGate > noiseGate ? cNoiseOn : cNoiseOff);
 
