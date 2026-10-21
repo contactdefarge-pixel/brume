@@ -22,7 +22,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    static constexpr int baseW = 1060, baseH = 470;
+    static constexpr int baseW = 1372, baseH = 360;   // controller on the left, info panel on the right (wide and short, fits above / below Traktor)
 
 private:
     void timerCallback() override;

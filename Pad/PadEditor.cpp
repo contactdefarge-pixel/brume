@@ -436,12 +436,13 @@ void PadEditor::layoutBody()
     pcBtn.setBounds (44, 262, 84, 40);
     ccBtn.setBounds (136, 262, 84, 40);
     targetBtn.setBounds (44, 314, 176, 26);
-    // strip under the controller
-    setupBtn.setBounds (430, 404, 110, 34);
-    offsetSlider.setBounds (556, 408, 130, 24);
-    bpmSlider.setBounds (700, 408, 150, 24);
-    masterKnob.setBounds (866, 390, 46, 46);
-    helpBtn.setBounds (1000, 402, 40, 40);
+    // info panel on the right of the controller
+    const int px = 1058;
+    offsetSlider.setBounds (px + 16, 104, 128, 24);
+    bpmSlider.setBounds (px + 156, 104, 128, 24);
+    masterKnob.setBounds (px + 34, 160, 60, 60);
+    setupBtn.setBounds (px + 16, 286, 150, 34);
+    helpBtn.setBounds (px + 244, 282, 40, 40);
 }
 
 void PadEditor::resized()
@@ -602,49 +603,60 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.drawRoundedRectangle (b.reduced (2.0f), 14.0f, 6.0f);
     }
 
-    // strip under the controller
+    // info panel on the right of the controller
     {
+        const float px = 1058.0f;
+        g.setColour (juce::Colours::black.withAlpha (0.5f));
+        g.fillRoundedRectangle (juce::Rectangle<float> (px, 20.0f, 300.0f, 330.0f), 12.0f);
         g.setColour (juce::Colour (0xff17181b));
-        g.fillRoundedRectangle (juce::Rectangle<float> (14.0f, 360.0f, 1032.0f, 100.0f), 10.0f);
+        g.fillRoundedRectangle (juce::Rectangle<float> (px, 14.0f, 300.0f, 330.0f), 12.0f);
         const int src = proc.getSyncSource();
         g.setFont (logoFont (12.0f, 0.08f));
         g.setColour (src == 1 || src == 3 ? juce::Colour (0xff4cd964) : orange);
-        const juce::String srcName = src == 1 ? "SYNC MIDI CLOCK  " : src == 3 ? "SYNC LINK  " : src == 2 ? "SYNC HOST  " : "INTERNAL  ";
-        g.drawText (srcName + juce::String (proc.getBpm(), 1) + " BPM",
-                    juce::Rectangle<float> (32.0f, 376.0f, 300.0f, 20.0f), juce::Justification::centredLeft);
+        const juce::String srcName = src == 1 ? "MIDI CLOCK  " : src == 3 ? "LINK  " : src == 2 ? "HOST  " : "INTERNAL  ";
+        g.drawText (srcName + juce::String (proc.getBpm(), 1) + " BPM", juce::Rectangle<float> (px + 16.0f, 26.0f, 210.0f, 20.0f), juce::Justification::centredLeft);
         // beat dots
         const int beatNow = (int) proc.getBarBeat();
         for (int i = 0; i < 4; ++i)
         {
             g.setColour (i == beatNow ? (i == 0 ? juce::Colour (0xffff3030) : orange) : juce::Colour (0xff2e3034));
-            g.fillEllipse (330.0f + 18.0f * (float) i, 380.0f, 10.0f, 10.0f);
+            g.fillEllipse (px + 226.0f + 16.0f * (float) i, 31.0f, 10.0f, 10.0f);
         }
-        g.setFont (labelFont (11.5f, false));
+        g.setFont (labelFont (11.0f, false));
         g.setColour (print.withAlpha (0.8f));
         const int peers = proc.getLinkPeers();
-        g.drawText (proc.getMidiStatus() + "   LINK " + (peers > 0 ? juce::String (peers) + " PEER" + (peers > 1 ? "S" : "") : juce::String ("WAITING")),
-                    juce::Rectangle<float> (32.0f, 402.0f, 390.0f, 18.0f), juce::Justification::centredLeft);
+        g.drawFittedText (proc.getMidiStatus() + "   LINK " + (peers > 0 ? juce::String (peers) + " PEER" + (peers > 1 ? "S" : "") : juce::String ("WAITING")),
+                          juce::Rectangle<int> ((int) px + 16, 52, 270, 16), juce::Justification::centredLeft, 1, 0.7f);
         g.setColour (printDim);
         const auto ev = proc.getLastEvent();
-        g.drawText ((ev.isNotEmpty() ? ev + "    " : juce::String()) + "V" + Updater::currentVersion(),
-                    juce::Rectangle<float> (32.0f, 426.0f, 390.0f, 18.0f), juce::Justification::centredLeft);
+        g.drawFittedText ((ev.isNotEmpty() ? ev + "    " : juce::String()) + "V" + Updater::currentVersion(),
+                          juce::Rectangle<int> ((int) px + 16, 72, 270, 16), juce::Justification::centredLeft, 1, 0.7f);
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.fillRect (px + 14.0f, 94.0f, 272.0f, 1.0f);
+        g.fillRect (px + 14.0f, 146.0f, 272.0f, 1.0f);
+        g.fillRect (px + 14.0f, 272.0f, 272.0f, 1.0f);
+        g.setColour (printDim);
         g.setFont (labelFont (9.0f, true, 0.1f));
-        g.drawText ("TEMPO " + juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1) + " (NO SYNC)", juce::Rectangle<float> (700.0f, 434.0f, 150.0f, 12.0f), juce::Justification::centred);
+        g.drawText ("SYNC OFFSET " + proc.apvts.getParameter (id::syncOffset)->getCurrentValueAsText(), juce::Rectangle<float> (px + 6.0f, 130.0f, 148.0f, 12.0f), juce::Justification::centred);
+        g.drawText ("TEMPO " + juce::String (proc.apvts.getRawParameterValue (id::bpm)->load(), 1) + " (NO SYNC)", juce::Rectangle<float> (px + 146.0f, 130.0f, 148.0f, 12.0f), juce::Justification::centred);
         {
             const float mdb = PadProcessor::masterDb (proc.apvts.getRawParameterValue (id::master)->load());
             const juce::String mtxt = mdb <= -99.0f ? juce::String ("-INF") : (mdb > 0.05f ? "+" : "") + juce::String (mdb, 1);
-            g.drawText ("MASTER " + mtxt + " dB", juce::Rectangle<float> (839.0f, 440.0f, 100.0f, 12.0f), juce::Justification::centred);
+            g.drawText ("MASTER", juce::Rectangle<float> (px + 14.0f, 224.0f, 100.0f, 12.0f), juce::Justification::centred);
+            g.setColour (print);
+            g.setFont (logoFont (12.0f, 0.04f));
+            g.drawText (mtxt + " dB", juce::Rectangle<float> (px + 14.0f, 240.0f, 100.0f, 16.0f), juce::Justification::centred);
         }
-        // stereo output meter, -48 .. +3 dB
+        // stereo output meter, -40 .. +3 dB
         {
-            const float top = 370.0f, bot = 444.0f, lo = -40.0f, hi = 3.0f;
+            const float top = 158.0f, bot = 250.0f, lo = -40.0f, hi = 3.0f, mx = px + 190.0f;
             auto yOf = [&] (float db) { return juce::jmap (juce::jlimit (lo, hi, db), lo, hi, bot, top); };
             auto toDb = [] (float a) { return a > 1.0e-5f ? 20.0f * std::log10 (a) : -100.0f; };
             for (int c = 0; c < 2; ++c)
             {
-                const float x = 950.0f + 11.0f * (float) c;
+                const float x = mx + 15.0f * (float) c;
                 g.setColour (juce::Colours::black.withAlpha (0.6f));
-                g.fillRect (x, top, 9.0f, bot - top);
+                g.fillRect (x, top, 12.0f, bot - top);
                 const float lvl = toDb (meter[c]);
                 if (lvl > lo)
                 {
@@ -652,27 +664,31 @@ void PadEditor::paintBody (juce::Graphics& g)
                     juce::ColourGradient grad (juce::Colour (0xffff3030), 0.0f, yOf (0.0f), juce::Colour (0xff4cd964), 0.0f, yOf (-18.0f), false);
                     grad.addColour (0.5, juce::Colour (0xffffc040));
                     g.setGradientFill (grad);
-                    g.fillRect (x, y, 9.0f, bot - y);
+                    g.fillRect (x, y, 12.0f, bot - y);
                 }
                 const float h = toDb (peakHold[c]);
-                if (h > lo) { g.setColour (h > -1.0f ? juce::Colour (0xffff3030) : print); g.fillRect (x, yOf (h) - 1.0f, 9.0f, 2.0f); }
+                if (h > lo) { g.setColour (h > -1.0f ? juce::Colour (0xffff3030) : print); g.fillRect (x, yOf (h) - 1.0f, 12.0f, 2.0f); }
             }
             g.setFont (labelFont (8.0f, false));
             for (float db : { 0.0f, -6.0f, -12.0f, -24.0f, -40.0f })
             {
                 g.setColour (db == 0.0f ? juce::Colour (0xffff6060) : printDim);
-                if (db != -6.0f) g.drawText (juce::String ((int) db), juce::Rectangle<float> (922.0f, yOf (db) - 5.0f, 24.0f, 10.0f), juce::Justification::centredRight);
-                g.fillRect (947.0f, yOf (db), 2.0f, 1.0f);
+                g.drawText (juce::String ((int) db), juce::Rectangle<float> (mx - 32.0f, yOf (db) - 5.0f, 26.0f, 10.0f), juce::Justification::centredRight);
+                g.fillRect (mx - 4.0f, yOf (db), 3.0f, 1.0f);
             }
-            const float pk = toDb (std::max (peakHold[0], peakHold[1]));
-            g.setFont (labelFont (8.5f, true));
-            g.setColour (clipTicks > 0 ? juce::Colour (0xffff3030) : printDim);
-            g.drawText (clipTicks > 0 ? juce::String ("LIMIT") : pk <= -99.0f ? juce::String ("-INF") : juce::String (pk, 1),
-                        juce::Rectangle<float> (935.0f, 447.0f, 50.0f, 10.0f), juce::Justification::centred);
             g.setColour (printDim);
-            g.setFont (labelFont (9.0f, true, 0.1f));
+            g.setFont (labelFont (8.0f, true, 0.1f));
+            g.drawText ("L      R", juce::Rectangle<float> (mx - 4.0f, top - 13.0f, 35.0f, 10.0f), juce::Justification::centred);
+            const float pk = toDb (std::max (peakHold[0], peakHold[1]));
+            g.setFont (labelFont (9.0f, true));
+            g.setColour (clipTicks > 0 ? juce::Colour (0xffff3030) : printDim);
+            g.drawText (clipTicks > 0 ? juce::String ("LIMIT") : pk <= -99.0f ? juce::String ("-INF") : juce::String (pk, 1) + " dB",
+                        juce::Rectangle<float> (mx + 34.0f, 240.0f, 60.0f, 12.0f), juce::Justification::centredLeft);
+            g.setColour (printDim);
+            g.setFont (labelFont (8.0f, true, 0.1f));
+            g.drawText ("PEAK", juce::Rectangle<float> (mx + 34.0f, 226.0f, 60.0f, 12.0f), juce::Justification::centredLeft);
         }
-        g.drawText ("SYNC OFFSET " + proc.apvts.getParameter (id::syncOffset)->getCurrentValueAsText(), juce::Rectangle<float> (546.0f, 434.0f, 150.0f, 12.0f), juce::Justification::centred);
-        g.drawText ("WIKI", juce::Rectangle<float> (990.0f, 444.0f, 60.0f, 12.0f), juce::Justification::centred);
+        g.setFont (labelFont (9.0f, true, 0.1f));
+        g.drawText ("WIKI", juce::Rectangle<float> (px + 234.0f, 323.0f, 60.0f, 12.0f), juce::Justification::centred);
     }
 }
