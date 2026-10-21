@@ -19,6 +19,7 @@ PadProcessor::PadProcessor()
 {
     brumeEngine.setRevoloNoise (true);
     brumeEngine.setSlowNoiseDown (true);
+    brumeEngine.setFreeTremolo (true);   // K7 TEMPO = a plain rate in Hz, glides without any cut
     brumeEngine.setPlayHead (&brumeHead);
     for (auto& d : padDown) d.store (false);
     for (auto& h : padHit) h.store (-10.0);
@@ -350,8 +351,10 @@ void PadProcessor::doKill()
 {
     for (int k = 2; k <= 5; ++k) fx[(size_t) k].kill();
     setParam (brumeEngine.apvts, brume::id::on, 0.0f);   // Brume stops, its tail fades with LENGTH
-    activeSound.store (-1);                              // X-PAD roll stops
-    setParam (apvts, id::ppVolume, 0.0f);                // Pattern Player stops (turn K1 of program 3 to bring it back)
+    setParam (brumeEngine.apvts, brume::id::tremolo, 0.0f);   // TREM ON pad off
+    activeSound.store (-1);                              // X-PAD: sound and speed pads all off
+    activeSpeed.store (-1);
+    ppSteps.store (0);                                   // Pattern Player: every step off (press steps or turn K7 to start again)
     killTime.store (uiTime());
     setEvent ("KILL FX");
 }
@@ -604,6 +607,7 @@ float PadProcessor::getKnobValue (int prog, int k) const
 juce::String PadProcessor::getKnobText (int prog, int k) const
 {
     if (prog == 0) if (auto* p = apvts.getParameter (p1KnobId (k))) return p->getCurrentValueAsText();
+    if (prog == 1 && k == 6) { const float hz = brume::tremoloRateHz (brumeEngine.apvts.getRawParameterValue (brume::id::tempo)->load()); return juce::String (hz, hz < 10.0f ? 2 : 1) + " Hz"; }
     if (prog == 1) if (auto* p = brumeEngine.apvts.getParameter (p2KnobId (k))) return p->getCurrentValueAsText();
     if (prog == 2) if (auto* p = apvts.getParameter (p3KnobId (k))) return p->getCurrentValueAsText();
     return {};

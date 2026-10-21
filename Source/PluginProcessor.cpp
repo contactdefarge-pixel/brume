@@ -337,7 +337,8 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
     // 3) noise (direct + wash) with tremolo, summed into the wet bus, then Air and low cut
     const auto* wL = washBuf.getReadPointer (0); const auto* wR = washBuf.getReadPointer (1);
     const double inc = rate / fs;
-    if (tapReset.exchange (false) && src == 0) tremPhase = 0.0;
+    const bool lockTrem = src > 0 && ! freeTremolo;
+    if (tapReset.exchange (false) && ! lockTrem) tremPhase = 0.0;
     // division with hysteresis, so a knob resting on a boundary doesn't flip between two divisions
     {
         const float pos = pTempo->load() * 9.0f;
@@ -350,7 +351,7 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
     for (int i = 0; i < n; ++i)
     {
         tremDepth = tTrem + (tremDepth - tTrem) * cParam;
-        if (src > 0)
+        if (lockTrem)
         {
             // locked to the beat grid, but phase-continuous: changing division (or tempo) glides instead of cutting
             const double c = (beatAtStart + i * beatInc) * cyclesPerBeat;
@@ -403,7 +404,7 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
 //==============================================================================
 void BrumeProcessor::tap()
 {
-    if (syncSource.load() != 0) return;   // tempo comes from the clock
+    if (syncSource.load() != 0 && ! freeTremolo) return;   // tempo comes from the clock
     const double now = juce::Time::getMillisecondCounterHiRes();
     for (int i = taps.size(); --i >= 0;)
         if (now - taps[i] > 2200.0) taps.remove (i);
@@ -517,7 +518,7 @@ void BrumeProcessor::handleMidi (const juce::MidiMessage& m, juce::int64 sampleP
 
 void BrumeProcessor::tapAtSample (juce::int64 samplePos)
 {
-    if (syncSource.load() != 0) return;
+    if (syncSource.load() != 0 && ! freeTremolo) return;
     // same rule as the TAP footswitch, timed with the audio clock for accuracy
     const juce::int64 maxGap = (juce::int64) (2.2 * fs);
     if (numMidiTaps > 0 && samplePos - midiTaps[(size_t) numMidiTaps - 1] > maxGap)

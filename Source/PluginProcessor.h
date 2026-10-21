@@ -49,6 +49,7 @@ public:
     explicit BrumeProcessor (bool embedded = false);
     void setRevoloNoise (bool r) { revoloNoise = r; }
     void setSlowNoiseDown (bool b) { slowNoiseDown = b; }
+    void setFreeTremolo (bool b)   { freeTremolo = b; }   // tremolo always in Hz, never locked to the beat
     ~BrumeProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -145,7 +146,7 @@ private:
 
     // smoothing state
     float sendGate = 0.0f, noiseGate = 0.0f, dryGain = 1.0f, sendAmt = 0.0f, noiseAmt = 0.0f, tremDepth = 0.0f;
-    int tremDivIdx = -1;
+    int tremDivIdx = -1; bool freeTremolo = false;
     double tremPhase = 0.0;
     std::atomic<float> tremPhaseUi { 0.0f };
     std::atomic<bool> tapReset { false };

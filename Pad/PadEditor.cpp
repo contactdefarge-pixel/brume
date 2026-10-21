@@ -125,13 +125,13 @@ namespace
 "gauche et droite indépendants, qui s'épaissit dans la réverbe).\n\n"
 "PADS\n"
 "   PAD 5 ON / OFF : allume / éteint Brume (la queue s'éteint selon LENGTH)\n"
-"   PAD 6 TAP : taper le tempo du trémolo (sans synchro)\n"
+"   PAD 6 TAP : taper la vitesse du trémolo (en rythme avec la musique)\n"
 "   PAD 7 TREM ON : trémolo marche / arrêt\n"
 "   PAD 8 HOLD : Brume allumé tant qu'on appuie\n"
-"   PADS 1 à 4 (rangée du bas) : inactifs dans ce programme. La division du trémolo se règle avec K7 TEMPO.\n\n"
+"   PADS 1 à 4 (rangée du bas) : inactifs dans ce programme. La vitesse du trémolo se règle en Hz avec K7 TEMPO.\n\n"
 "BOUTONS (comme la pédale Brume)\n"
 "   K1 REVERB (quantité de musique envoyée dans la réverbe) · K2 CHARACTER · K3 LENGTH · K4 AIR\n"
-"   K5 NOISE (volume du bruit) · K6 TREMOLO · K7 TEMPO (division quand c'est synchronisé) · K8 FILTER\n\n"
+"   K5 NOISE (volume du bruit) · K6 TREMOLO · K7 TEMPO (vitesse du trémolo en Hz, sans palier ni coupure) · K8 FILTER\n\n"
 "Baisser NOISE fait comme OFF : le bruit s'efface au rythme de la queue de réverbe (réglée par LENGTH).");
             case 3: return u (
 "PROGRAMME 3 - PATTERN PLAYER\n\n"
@@ -156,7 +156,7 @@ namespace
 "ASTUCE : choisir CL HAT + PATTERN 2 (contretemps) pour ajouter un charley sur un morceau, ou CLAP + PATTERN 3 avant un drop.");
             case 4: return u (
 "KILL FX\n\n"
-"Coupe tout d'un coup : short delay, long delay, dub echo, réverbe, Brume (bruit blanc), le roulement X-PAD et le Pattern Player (son K1 VOLUME repasse à 0). Les échos et réverbes "
+"Coupe tout d'un coup : short delay, long delay, dub echo, réverbe, Brume (bruit blanc), et remet tous les pads à zéro : X-PAD (son et vitesse éteints), Brume (ON et TREM ON éteints), Pattern Player (tous les pas éteints ; ré-appuyer sur des pas ou tourner K7 PATTERN pour repartir). Les échos et réverbes "
 "gardent leur queue (le feedback est réduit pour qu'elle s'éteigne), rien ne s'arrête brutalement.\n\n"
 "TROIS FAÇONS DE LE DÉCLENCHER\n"
 "   1. Sur le LPD8 : appuyer sur CC puis sur n'importe quel pad (en mode CC les pads envoient des messages CC, "

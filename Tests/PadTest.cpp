@@ -153,7 +153,7 @@ int main()
         std::printf ("P3 volume 0          : %6.1f dB (silent)\n", m.rmsDb());
         r.cc (12, 90, 100); m = r.run (2.0);
         std::printf ("P3 pattern playing   : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
-        r.p.killFx(); r.run (0.3); m = r.run (2.0);
+        r.p.killFx(); r.run (2.5); m = r.run (2.0);   // the last hit rings out (DECAY at 100 %)
         std::printf ("KILL (CC) all        : pattern after kill %6.1f dB (expect silent)\n", m.rmsDb());
         r.cc (12, 90, 0); r.track.on = true;
 
