@@ -74,7 +74,7 @@ void PadProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     maxBlock = std::max (32, samplesPerBlock);
     brumeEngine.setRateAndBufferSizeDetails (fs, maxBlock);
     brumeEngine.prepareToPlay (fs, maxBlock);
-    kit.prepare ((float) fs);
+    kit.prepare (fs);
     delayFx.prepare (fs, 3); hpfEcho.prepare (fs, 0); lpfEcho.prepare (fs, 1); crushEcho.prepare (fs, 2);
     reverbFx.prepare (fs); noiseWash.prepare (fs);
     noiseWash.setParameters (3.5f, 0.75f, 0.45f, true);
@@ -238,7 +238,8 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
             if (! down) return;
             const int s = pad - 4;
             setParam (apvts, id::sound, (float) s / 3.0f);
-            triggerSound (s, 0.55f + 0.45f * velocity);
+            juce::ignoreUnused (velocity);
+            triggerSound (s, 1.0f);   // like the RMX: every hit at full level
             setEvent (juce::String ("SOUND ") + soundName (s));
             return;
         }
@@ -290,11 +291,10 @@ void PadProcessor::doKill()
     setEvent ("KILL FX");
 }
 
-void PadProcessor::triggerSound (int sound, float vel)
+void PadProcessor::triggerSound (int sound, float vel, float gateSeconds)
 {
-    static const int kitIndex[] = { 2, 0, 1, 3 };   // KICK SNARE CLAP HAT -> kit buffers
     const float semis = -12.0f + 24.0f * apvts.getRawParameterValue (id::pitch)->load();
-    voices[(size_t) nextVoice].trigger (kit.s[(size_t) kitIndex[sound]], kitIndex[sound], (float) fs, semis, vel, 10.0f, 0.5f);
+    voices[(size_t) nextVoice].trigger (kit.s[(size_t) sound], sound, (float) fs, semis, vel, gateSeconds, 0.5f);
     nextVoice = (nextVoice + 1) % (int) voices.size();
 }
 
@@ -364,7 +364,7 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     auto* R = buffer.getWritePointer (1);
     {
         const float dv = apvts.getRawParameterValue (id::drums)->load();
-        const float drumGain = dv * dv * 1.4f;
+        const float drumGain = dv * dv * 1.75f;
         const int sound = (int) std::lround (apvts.getRawParameterValue (id::sound)->load() * 3.0f);
         double b = beat;
         for (int i = 0; i < n; ++i)
@@ -376,11 +376,16 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
                 const float rate = rollPerBeat (held);
                 if (rate != lastRollRate) { lastRollIdx = (juce::int64) std::floor (b * rate); lastRollRate = rate; }
                 const auto ri = (juce::int64) std::floor (b * rate);
-                if (ri > lastRollIdx) { triggerSound (sound, 0.9f); lastRollIdx = ri; }
+                if (ri > lastRollIdx)
+                {
+                    // the RMX cuts each hit to the length of the division (a 1/16 kick is short)
+                    triggerSound (sound, 1.0f, (float) (60.0 / bpm / rate) - 0.012f);
+                    lastRollIdx = ri;
+                }
             }
             float y = 0.0f;
             for (auto& v : voices) if (v.active) y += v.tick();
-            y = std::tanh (y * 1.3f) * drumGain;
+            y *= drumGain;
             L[i] += y; R[i] += y;
             b += inc;
         }

@@ -4,6 +4,8 @@
 #include <vector>
 #include <cmath>
 #include "../Station/StationDSP.h"
+#include <juce_audio_formats/juce_audio_formats.h>
+#include "BinaryData.h"
 
 // Effects of Brume Pad (program 1), each driven by ONE knob: 0 = off, turning up = more effect.
 namespace pad
@@ -140,6 +142,31 @@ struct RevoloNoise
         const float a = c * 0.38f + rng.next() * 0.92f, b = c * 0.38f + rng.next() * 0.92f;
         l = lpL.tick (hpL.tick (a * 0.5f).hp).lp;
         r = lpR.tick (hpR.tick (b * 0.5f).hp).lp;
+    }
+};
+
+// The four X-PAD sounds, extracted from a recording of the RMX-1000 (one clean hit each, mono 44.1 kHz),
+// resampled to the session rate. 0 KICK, 1 SNARE, 2 CLAP, 3 HAT.
+struct RmxKit
+{
+    std::array<std::vector<float>, 4> s;
+    void prepare (double fs)
+    {
+        const void* data[4] = { BinaryData::rmx_kick_wav, BinaryData::rmx_snare_wav, BinaryData::rmx_clap_wav, BinaryData::rmx_hat_wav };
+        const int size[4] = { BinaryData::rmx_kick_wavSize, BinaryData::rmx_snare_wavSize, BinaryData::rmx_clap_wavSize, BinaryData::rmx_hat_wavSize };
+        juce::WavAudioFormat wav;
+        for (int i = 0; i < 4; ++i)
+        {
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (new juce::MemoryInputStream (data[i], (size_t) size[i], false), true));
+            if (r == nullptr) { s[(size_t) i].assign (16, 0.0f); continue; }
+            juce::AudioBuffer<float> src (1, (int) r->lengthInSamples);
+            r->read (&src, 0, (int) r->lengthInSamples, 0, true, false);
+            const double ratio = r->sampleRate / fs;
+            const int outLen = (int) std::ceil (src.getNumSamples() / ratio);
+            s[(size_t) i].assign ((size_t) outLen + 4, 0.0f);
+            juce::LagrangeInterpolator interp;
+            interp.process (ratio, src.getReadPointer (0), s[(size_t) i].data(), outLen);
+        }
     }
 };
 }

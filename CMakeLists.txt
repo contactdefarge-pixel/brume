@@ -50,7 +50,8 @@ juce_add_plugin(Brume
     MICROPHONE_PERMISSION_TEXT "Brume a besoin de l'entree audio pour traiter le son de Traktor (BlackHole).")
 
 # Michroma font for the logo plate (SIL Open Font License, Resources/OFL-Michroma.txt)
-juce_add_binary_data(BrumeAssets SOURCES Resources/Michroma-Regular.ttf)
+juce_add_binary_data(BrumeAssets SOURCES Resources/Michroma-Regular.ttf
+    Resources/rmx_kick.wav Resources/rmx_snare.wav Resources/rmx_clap.wav Resources/rmx_hat.wav)
 set_target_properties(BrumeAssets PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 
 target_sources(Brume PRIVATE

@@ -173,6 +173,18 @@ int main()
         r.run (5.0);
         saveWav (r.rec, "pad-demo.wav");
     }
+    // RMX check: each sound rolled at 1/4, 1/8, 1/16 at 128 BPM (MIDI clock), like the reference recording
+    {
+        Rig r; r.track.on = false; r.recording = true; r.clockBpm = 128.0;
+        r.run (1.0); r.rec.setSize (2, 0);
+        const int soundPads[] = { 40, 41, 42, 43 }, speedPads[] = { 36, 37, 38 };
+        for (int sp : soundPads)
+        {
+            r.note (10, sp, true); r.note (10, sp, false); r.run (0.3);
+            for (int sd : speedPads) { r.note (10, sd, true); r.run (4.0); r.note (10, sd, false); r.run (0.5); }
+        }
+        saveWav (r.rec, "pad-rmx-check.wav");
+    }
     // Revolo noise alone (program 2)
     {
         Rig r; r.track.on = false; r.recording = true;

@@ -125,7 +125,7 @@ private:
     void handleKnob (int prog, int knob, float v);
     void doKill();
     void setParam (juce::AudioProcessorValueTreeState& t, const char* pid, float v);
-    void triggerSound (int sound, float vel);
+    void triggerSound (int sound, float vel, float gateSeconds = 10.0f);
     void setEvent (const juce::String& s) { const juce::ScopedLock sl (eventLock); lastEvent = s; }
 
     // LPD8 mapping, learned once per program (PROGRAM + pad on the LPD8 changes the notes / CCs it sends)
@@ -138,7 +138,7 @@ private:
     juce::int64 sampleCounter = 0;
 
     // drums (program 1)
-    station::Kit kit;
+    pad::RmxKit kit;
     std::array<station::SampleVoice, 12> voices; int nextVoice = 0;
     std::array<bool, 4> rollHeld {}; std::array<int, 4> rollOrder {}; int rollCounter = 0;
     juce::int64 lastRollIdx = -1; float lastRollRate = 0.0f;
