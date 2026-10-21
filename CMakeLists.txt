@@ -61,6 +61,7 @@ target_sources(Brume PRIVATE
     Source/F1Reader.cpp)
 
 # Direct USB (HID) reading of the Traktor Kontrol F1, via hidapi (BSD licence, ThirdParty/hidapi)
+option(BRUME_LINK_LINUX "Build Ableton Link on Linux too (tests)" OFF)
 option(BRUME_F1_LINUX "Build the F1 HID reader on Linux too (needs libudev, for testing)" OFF)
 function(brume_add_hidapi target)
     target_include_directories(${target} PRIVATE ThirdParty/hidapi/hidapi ThirdParty/hidapi/mac)
@@ -116,7 +117,8 @@ juce_add_plugin(BrumePad
     VST3_CATEGORIES Fx
     AU_MAIN_TYPE kAudioUnitType_MusicEffect
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "Brume Pad a besoin de l'entree audio pour traiter le son de Traktor (BlackHole).")
+    MICROPHONE_PERMISSION_TEXT "Brume Pad a besoin de l'entree audio pour traiter le son de Traktor (BlackHole)."
+    PLIST_TO_MERGE "<plist><dict><key>NSLocalNetworkUsageDescription</key><string>Brume Pad utilise Ableton Link pour suivre le tempo de Traktor.</string></dict></plist>")
 
 target_sources(BrumePad PRIVATE
     Pad/PadProcessor.cpp
@@ -126,6 +128,29 @@ target_sources(BrumePad PRIVATE
     Source/Updater.cpp
     Source/F1Reader.cpp)
 brume_add_hidapi(BrumePad)
+
+# Ableton Link (Traktor's LINK button): tempo and beat over the network, Mac only (GPLv2, personal use)
+if(APPLE OR BRUME_LINK_LINUX)
+    include(FetchContent)
+    FetchContent_Declare(abletonlink
+        GIT_REPOSITORY https://github.com/Ableton/link.git
+        GIT_TAG Link-3.1.5
+        GIT_SHALLOW ON
+        GIT_SUBMODULES modules/asio-standalone)
+    FetchContent_GetProperties(abletonlink)
+    if(NOT abletonlink_POPULATED)
+        FetchContent_Populate(abletonlink)
+    endif()
+    include(${abletonlink_SOURCE_DIR}/AbletonLinkConfig.cmake)
+    set(BRUME_HAS_LINK ON)
+endif()
+function(brume_add_link target)
+    if(BRUME_HAS_LINK)
+        target_link_libraries(${target} PRIVATE Ableton::Link)
+        target_compile_definitions(${target} PRIVATE BRUME_HAS_LINK=1)
+    endif()
+endfunction()
+brume_add_link(BrumePad)
 if(APPLE AND DEFINED ENV{BRUME_UPDATE_TOKEN} AND NOT "$ENV{BRUME_UPDATE_TOKEN}" STREQUAL "")
     target_compile_definitions(BrumePad PRIVATE BRUME_UPDATE_TOKEN="$ENV{BRUME_UPDATE_TOKEN}")
 endif()
@@ -157,6 +182,7 @@ if(BRUME_BUILD_TESTS)
     juce_add_console_app(PadTest PRODUCT_NAME "PadTest")
     target_sources(PadTest PRIVATE Tests/PadTest.cpp Pad/PadProcessor.cpp Pad/PadEditor.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Updater.cpp Source/F1Reader.cpp)
     brume_add_hidapi(PadTest)
+    brume_add_link(PadTest)
     target_compile_definitions(PadTest PRIVATE BRUME_EMBEDDED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 BRUME_TEST=1 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(PadTest PRIVATE BrumeAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
 endif()

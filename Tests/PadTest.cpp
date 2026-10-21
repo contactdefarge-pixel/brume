@@ -88,10 +88,14 @@ int main()
         std::printf ("music through        : %6.1f dB\n", r.run (2.0).rmsDb());
 
         // program 1 (factory LPD8 MK2: pads 36-43, knobs CC 70-77): SNARE (pad 6) then hold 1/16 (pad 3)
-        r.note (10, 41, true); r.note (10, 41, false); r.run (0.3);
-        std::printf ("pad 6                : sound %s (expect SNARE)\n", soundName (r.p.getSelectedSound()));
-        r.note (10, 38, true); auto m = r.run (2.0); r.note (10, 38, false);
-        std::printf ("roll 1/16 + music    : %6.1f dB rms, %5.1f dB peak\n", m.rmsDb(), m.peakDb());
+        r.note (10, 41, true); r.note (10, 41, false); r.run (0.5);
+        std::printf ("pad 6 (one press)    : %s playing %s (expect SNARE at 1/4)\n", soundName (r.p.getSelectedSound()),
+                     r.p.getActiveSound() == 1 ? padLabel (0, r.p.getActiveSpeed()) : "NOTHING");
+        r.note (10, 38, true); r.note (10, 38, false); auto m = r.run (2.0);
+        std::printf ("1/16 (one press)     : speed %s, %6.1f dB rms, %5.1f dB peak\n", padLabel (0, r.p.getActiveSpeed()), m.rmsDb(), m.peakDb());
+        r.note (10, 41, true); r.note (10, 41, false); r.run (0.5);
+        std::printf ("pad 6 again          : playing %s (expect none)\n", r.p.getActiveSound() < 0 ? "none" : "STILL");
+        r.note (10, 36, true); r.note (10, 36, false);   // back to 1/4 for the next tests
         r.run (1.0);
 
         // effects: each knob, then KILL with pads 5 + 8; the tail must keep ringing when the music stops
@@ -130,6 +134,18 @@ int main()
         r.clockBpm = 128.0; r.run (2.0);
         std::printf ("MIDI clock           : source %d, %.2f BPM (expect 1, 128)\n", r.p.getSyncSource(), r.p.getBpm());
         r.clockBpm = 0.0; r.run (1.0);
+       #if BRUME_HAS_LINK
+        {
+            // a second Link peer playing 132 BPM, like Traktor with LINK on
+            ableton::Link peer (132.0);
+            peer.enable (true);
+            r.p.startLink();
+            for (int i = 0; i < 40 && r.p.getLinkPeers() == 0; ++i) { juce::Thread::sleep (100); r.run (0.05); }
+            r.run (1.0);
+            std::printf ("Ableton Link         : peers %d, source %d, %.2f BPM (expect >=1, 3, 132)\n", r.p.getLinkPeers(), r.p.getSyncSource(), r.p.getBpm());
+            peer.enable (false);
+        }
+       #endif
 
         // snapshots
         std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
@@ -142,9 +158,9 @@ int main()
             out.deleteFile(); juce::FileOutputStream os (out); juce::PNGImageFormat().writeImageToStream (img, os);
             std::printf ("snapshot             : %s\n", out.getFullPathName().toRawUTF8());
         };
-        r.cc (10, 74, 70); r.cc (10, 76, 40); r.note (10, 38, true); r.run (0.3);
+        r.cc (10, 74, 70); r.cc (10, 76, 40); r.note (10, 38, true); r.note (10, 38, false); r.note (10, 41, true); r.note (10, 41, false); r.run (0.3);
         snap ("pad-p1.png");
-        r.note (10, 38, false); r.note (11, 45, true); r.note (11, 45, false); r.run (0.3);
+        r.note (10, 41, true); r.note (10, 41, false); r.note (11, 45, true); r.note (11, 45, false); r.run (0.3);
         snap ("pad-p2.png");
     }
 
@@ -154,16 +170,16 @@ int main()
         Rig r; r.recording = true;
         auto knob = [&] (int k, float v) { r.cc (10, 70 + k, juce::roundToInt (v * 127.0f)); };
         r.run (7.74);
-        r.note (10, 41, true); r.note (10, 41, false);           // SNARE
+        r.note (10, 41, true); r.note (10, 41, false);           // SNARE on (1/4)
         knob (0, 0.35f); knob (1, 0.5f);
         const int speeds[] = { 36, 37, 38, 39 };
         for (int s = 0; s < 4; ++s)
         {
-            r.note (10, speeds[s], true);
+            if (s > 0) { r.note (10, speeds[s], true); r.note (10, speeds[s], false); }
             for (int i = 0; i < 4; ++i) { knob (0, 0.35f + 0.05f * (s * 4 + i)); knob (1, 0.5f + 0.012f * (s * 4 + i)); r.run (0.484); }
-            r.note (10, speeds[s], false);
         }
-        knob (0, 0.0f); knob (1, 0.5f);                           // drop
+        r.note (10, 41, true); r.note (10, 41, false);           // SNARE off = drop
+        knob (0, 0.8f); knob (1, 0.5f);
         knob (4, 0.55f); r.run (1.94); knob (4, 0.0f); r.run (1.94);
         knob (3, 0.6f); r.run (3.87); knob (3, 0.0f); r.run (1.0);
         knob (6, 0.7f); r.run (3.87); knob (6, 0.0f);
@@ -180,8 +196,16 @@ int main()
         const int soundPads[] = { 40, 41, 42, 43 }, speedPads[] = { 36, 37, 38 };
         for (int sp : soundPads)
         {
-            r.note (10, sp, true); r.note (10, sp, false); r.run (0.3);
-            for (int sd : speedPads) { r.note (10, sd, true); r.run (4.0); r.note (10, sd, false); r.run (0.5); }
+            r.note (10, 36, true); r.note (10, 36, false);                 // 1/4 selected (stays lit)
+            if (r.p.getActiveSpeed() != 0) { r.note (10, 36, true); r.note (10, 36, false); }
+            r.note (10, sp, true); r.note (10, sp, false); r.run (0.3);   // sound on (1/4)
+            for (int sd : speedPads)
+            {
+                if (sd != 36) { r.note (10, sd, true); r.note (10, sd, false); }
+                r.run (4.0);
+                if (sd == 38) { r.note (10, sp, true); r.note (10, sp, false); }   // sound off
+                r.run (0.5);
+            }
         }
         saveWav (r.rec, "pad-rmx-check.wav");
     }

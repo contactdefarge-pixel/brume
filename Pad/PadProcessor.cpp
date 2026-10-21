@@ -22,12 +22,29 @@ PadProcessor::PadProcessor()
     for (auto& h : padHit) h.store (-10.0);
     for (auto& k : fxKilledUi) k.store (false);
     if (juce::JUCEApplicationBase::isStandaloneApp())
+    {
         startTimerHz (1);
+        startLink();
+    }
+}
+
+void PadProcessor::startLink()
+{
+   #if BRUME_HAS_LINK
+    // Ableton Link: Traktor's LINK button shares tempo and beat over the network (also on the same Mac)
+    if (link != nullptr) return;
+    link = std::make_unique<ableton::Link> (124.0);
+    link->setNumPeersCallback ([this] (std::size_t n) { linkPeers.store ((int) n); });
+    link->enable (true);
+   #endif
 }
 
 PadProcessor::~PadProcessor()
 {
     stopTimer();
+   #if BRUME_HAS_LINK
+    if (link) link->enable (false);
+   #endif
     for (auto* in : openInputs) in->stop();
 }
 
@@ -221,11 +238,11 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
     if (down && (pad == 4 || pad == 7))
     {
         const double now = (double) sampleCounter / fs;
-        if (now - std::max (lastPad5Time, lastPad8Time) > 0.15) soundBeforeCombo = apvts.getRawParameterValue (id::sound)->load();
+        if (now - std::max (lastPad5Time, lastPad8Time) > 0.15) { soundBeforeCombo = apvts.getRawParameterValue (id::sound)->load(); activeBeforeCombo = activeSound.load(); }
         (pad == 4 ? lastPad5Time : lastPad8Time) = now;
         if (std::abs (lastPad5Time - lastPad8Time) < 0.15)
         {
-            if (prog == 0) setParam (apvts, id::sound, soundBeforeCombo);   // the combo is not a sound choice
+            if (prog == 0) { setParam (apvts, id::sound, soundBeforeCombo); activeSound.store (activeBeforeCombo); }   // the combo is not a sound choice
             doKill();
             return;
         }
@@ -233,26 +250,32 @@ void PadProcessor::handlePad (int prog, int pad, bool down, float velocity)
 
     if (prog == 0)
     {
-        if (pad >= 4)
+        // one press = on, one press = off (no holding): sound pads start / stop the roll, speed pads pick the speed
+        juce::ignoreUnused (velocity);
+        if (! down) return;
+        auto restartGrid = [this] (int speed)
         {
-            if (! down) return;
-            const int s = pad - 4;
-            setParam (apvts, id::sound, (float) s / 3.0f);
-            juce::ignoreUnused (velocity);
-            triggerSound (s, 1.0f);   // like the RMX: every hit at full level
-            setEvent (juce::String ("SOUND ") + soundName (s));
-            return;
-        }
-        if (down)
-        {
-            rollHeld[(size_t) pad] = true;
-            rollOrder[(size_t) pad] = ++rollCounter;
-            const float rate = rollPerBeat (pad);
+            const float rate = rollPerBeat (speed);
             const double pos = beat * rate;
             lastRollIdx = (juce::int64) std::floor (pos) - (pos - std::floor (pos) < 0.3 ? 1 : 0);   // a press just after the grid plays at once
             lastRollRate = rate;
+        };
+        if (pad >= 4)
+        {
+            const int snd = pad - 4;
+            if (activeSound.load() == snd) { activeSound.store (-1); setEvent (juce::String (soundName (snd)) + " OFF"); return; }
+            const bool wasPlaying = activeSound.load() >= 0;
+            activeSound.store (snd);
+            setParam (apvts, id::sound, (float) snd / 3.0f);
+            if (activeSpeed.load() < 0) activeSpeed.store (0);
+            if (! wasPlaying) restartGrid (activeSpeed.load());
+            setEvent (juce::String (soundName (snd)) + " ON  " + juce::String (padLabel (0, activeSpeed.load())));
+            return;
         }
-        else rollHeld[(size_t) pad] = false;
+        if (activeSpeed.load() == pad) { activeSpeed.store (-1); setEvent (juce::String (padLabel (0, pad)) + " OFF"); return; }
+        activeSpeed.store (pad);
+        restartGrid (pad);
+        setEvent (juce::String ("SPEED ") + padLabel (0, pad));
         return;
     }
 
@@ -332,6 +355,15 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
         bpm = fs * 60.0 / (clockTickSamples * 24.0);
         target = (clockTicks + (double) (blockStart - lastClockSample) / clockTickSamples) / 24.0;
     }
+   #if BRUME_HAS_LINK
+    else if (link != nullptr && linkPeers.load() > 0)
+    {
+        // beat at the moment this block will be heard (block length as an estimate of the output latency)
+        const auto t = link->clock().micros() + std::chrono::microseconds ((long long) (1.0e6 * n / fs));
+        const auto session = link->captureAudioSessionState();
+        src = 3; bpm = session.tempo(); target = session.beatAtTime (t, 4.0);
+    }
+   #endif
     else if (auto* ph = getPlayHead())
     {
         if (auto pos = ph->getPosition())
@@ -365,12 +397,11 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     {
         const float dv = apvts.getRawParameterValue (id::drums)->load();
         const float drumGain = dv * dv * 1.75f;
-        const int sound = (int) std::lround (apvts.getRawParameterValue (id::sound)->load() * 3.0f);
+        const int sound = std::max (0, activeSound.load());
         double b = beat;
         for (int i = 0; i < n; ++i)
         {
-            int held = -1, best = -1;
-            for (int p = 0; p < 4; ++p) if (rollHeld[(size_t) p] && rollOrder[(size_t) p] > best) { held = p; best = rollOrder[(size_t) p]; }
+            const int held = activeSound.load() >= 0 ? activeSpeed.load() : -1;
             if (held >= 0)
             {
                 const float rate = rollPerBeat (held);

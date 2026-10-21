@@ -46,8 +46,10 @@ namespace
         const bool down = p.padIsDown (pad);
         if (prog == 0)
         {
-            if (pad >= 4) return p.getSelectedSound() == pad - 4 ? juce::Colour (0xffff8a1f) : juce::Colour (0xff4a2408);
-            return down ? (onBeat ? juce::Colour (0xff9fe0ff) : juce::Colour (0xff3aa8ff)) : juce::Colour (0xff0c2a48);
+            juce::ignoreUnused (down);
+            if (pad >= 4) return p.getActiveSound() == pad - 4 ? (onBeat ? juce::Colour (0xffffc070) : juce::Colour (0xffff8a1f)) : juce::Colour (0xff4a2408);
+            if (p.getActiveSpeed() == pad) return p.getActiveSound() >= 0 && onBeat ? juce::Colour (0xff9fe0ff) : juce::Colour (0xff3aa8ff);
+            return juce::Colour (0xff0c2a48);
         }
         if (prog == 1)
         {
@@ -87,9 +89,11 @@ namespace
 "- KILL FX coupe tous les effets d'un coup en laissant les queues d'écho et de réverbe s'éteindre.");
             case 1: return u (
 "PROGRAMME 1 - X-PAD + EFFETS\n\n"
-"PADS DU HAUT (PAD 5 à 8) : choisir le son : KICK, SNARE, CLAP, HAT. Un appui le joue aussi une fois.\n"
-"PADS DU BAS (PAD 1 à 4) : ROULEMENT tant qu'on appuie, calé sur le tempo : 1/4, 1/8, 1/16, 1/32.\n"
-"   Passer d'un pad à l'autre change la vitesse en direct (accélérer avant le drop). Relâcher = stop.\n\n"
+"PADS DU HAUT (PAD 5 à 8) : KICK, SNARE, CLAP, HAT. Un appui lance le roulement, un deuxième appui l'arrête. "
+"Appuyer sur un autre son le remplace sans couper.\n"
+"PADS DU BAS (PAD 1 à 4) : la vitesse, calée sur le tempo : 1/4, 1/8, 1/16, 1/32. Un appui la choisit (elle reste "
+"allumée) ; ré-appuyer sur la vitesse allumée coupe le roulement. Changer de pad change la vitesse en direct "
+"(accélérer avant le drop). Pas besoin de garder le doigt.\n\n"
 "BOUTONS\n"
 "   K1 DRUMS VOL : volume des roulements. Monter avant le drop, baisser d'un coup au drop.\n"
 "   K2 PITCH : hauteur des sons (-12 à +12). Monter pendant un roulement = montée.\n"
@@ -100,7 +104,8 @@ namespace
 "   K7 CRUSH ECHO : écho dégradé (bit crusher) ; en fin de course le son lui-même se dégrade.\n"
 "   K8 WHITE NOISE : le bruit blanc du Revolo, avec son halo de réverbe.\n\n"
 "Pour les échos et la réverbe, le bouton ouvre l'envoi : en le baissant, la queue continue de sonner.\n\n"
-"EXEMPLE DE DROP : choisir SNARE, tenir 1/4 puis 1/8, 1/16, 1/32 en montant K1 et K2, puis au drop baisser K1.");
+"EXEMPLE DE DROP : SNARE (le roulement part en 1/4), puis 1/8, 1/16, 1/32 en montant K1 et K2 ; au drop, "
+"ré-appuyer sur SNARE (ou baisser K1).");
             case 2: return u (
 "PROGRAMME 2 - BRUME\n\n"
 "Le bruit blanc est voicé comme le Teile Revolo (mesuré sur tes vidéos : bruit large de 170 Hz à 10 kHz, "
@@ -136,11 +141,15 @@ namespace
 "Sans SETUP, Brume Pad fonctionne quand même avec les réglages d'usine du LPD8 MK2, et le programme se choisit à l'écran.\n\n"
 "Le LPD8 et le port d'horloge de Traktor sont ouverts automatiquement par l'app (rien à cocher).");
             default: return u (
-"SYNCHRO TRAKTOR (horloge MIDI)\n"
+"SYNCHRO TRAKTOR\n"
+"   LE PLUS SIMPLE : ABLETON LINK. Dans Traktor, appuyer sur LINK (en haut de l'écran). C'est tout : Brume Pad "
+"rejoint la session Link tout seul (en bas : SYNC LINK et LINK 1 PEER). Le Mac peut demander d'autoriser Brume Pad "
+"sur le réseau local : accepter.\n\n"
+"   OU L'HORLOGE MIDI :\n"
 "   1. Traktor > Préférences > Controller Manager > Add... > Generic MIDI, Out-Port : Traktor Virtual Output.\n"
 "   2. Traktor > Préférences > External Sync : cocher Enable MIDI Clock.\n"
 "   3. Dans Traktor, panneau Master Clock (métronome) : lancer l'horloge.\n"
-"   Brume Pad ouvre Traktor Virtual Output tout seul. En bas : SYNC TRAKTOR et le tempo.\n\n"
+"   Brume Pad ouvre Traktor Virtual Output tout seul. En bas : SYNC MIDI CLOCK et le tempo.\n\n"
 "SON (la musique passe dans Brume Pad)\n"
 "   - Traktor > Préférences > Audio Setup : un périphérique agrégé (carte son ou enceintes du Mac + BlackHole 2ch), "
 "Output Routing : Master sur les canaux de BlackHole (les casques restent sur ta carte son).\n"
@@ -517,8 +526,9 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.fillRoundedRectangle (juce::Rectangle<float> (14.0f, 360.0f, 1032.0f, 100.0f), 10.0f);
         const int src = proc.getSyncSource();
         g.setFont (logoFont (12.0f, 0.08f));
-        g.setColour (src == 1 ? juce::Colour (0xff4cd964) : orange);
-        g.drawText ((src == 1 ? "SYNC TRAKTOR  " : src == 2 ? "SYNC HOST  " : "INTERNAL  ") + juce::String (proc.getBpm(), 1) + " BPM",
+        g.setColour (src == 1 || src == 3 ? juce::Colour (0xff4cd964) : orange);
+        const juce::String srcName = src == 1 ? "SYNC MIDI CLOCK  " : src == 3 ? "SYNC LINK  " : src == 2 ? "SYNC HOST  " : "INTERNAL  ";
+        g.drawText (srcName + juce::String (proc.getBpm(), 1) + " BPM",
                     juce::Rectangle<float> (32.0f, 376.0f, 300.0f, 20.0f), juce::Justification::centredLeft);
         // beat dots
         const int beatNow = (int) proc.getBarBeat();
@@ -529,7 +539,9 @@ void PadEditor::paintBody (juce::Graphics& g)
         }
         g.setFont (labelFont (11.5f, false));
         g.setColour (print.withAlpha (0.8f));
-        g.drawText (proc.getMidiStatus(), juce::Rectangle<float> (32.0f, 402.0f, 520.0f, 18.0f), juce::Justification::centredLeft);
+        const int peers = proc.getLinkPeers();
+        g.drawText (proc.getMidiStatus() + "   LINK " + (peers > 0 ? juce::String (peers) + " PEER" + (peers > 1 ? "S" : "") : juce::String ("WAITING")),
+                    juce::Rectangle<float> (32.0f, 402.0f, 520.0f, 18.0f), juce::Justification::centredLeft);
         g.setColour (printDim);
         const auto ev = proc.getLastEvent();
         g.drawText ((ev.isNotEmpty() ? ev + "    " : juce::String()) + "V" + Updater::currentVersion(),

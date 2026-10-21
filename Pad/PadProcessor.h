@@ -7,6 +7,9 @@
 #include "../Source/Reverb.h"
 #include "../Station/StationDSP.h"
 #include "PadFX.h"
+#if BRUME_HAS_LINK
+ #include <ableton/Link.hpp>
+#endif
 
 // Brume Pad: an Akai LPD8 (MK2) turned into an RMX-1000 style performance box.
 //   Program 1 = X-PAD drums (top pads: KICK SNARE CLAP HAT, bottom pads: roll speed) + one-knob effects
@@ -96,13 +99,15 @@ public:
     void killFx()                     { killRequest.store (true); }
     void selectProgram (int p)        { program.store (juce::jlimit (0, bpad::numProgs - 1, p)); }
     void startLearn()                 { learnStep.store (1); }
+    void startLink();   // standalone does it by itself; tests call it
     void cancelLearn()                { learnStep.store (0); }
 
     // ---- state for the editor ----
     int   getProgram() const          { return program.load(); }
     int   getLearnStep() const        { return learnStep.load(); }   // 0 none, 1 P1 pad, 2 P1 knob, 3 P2 pad, 4 P2 knob
     bool  isLearned (int p) const     { return maps[(size_t) p].learned; }
-    int   getSyncSource() const       { return syncSource.load(); }
+    int   getSyncSource() const       { return syncSource.load(); }   // 0 internal, 1 MIDI clock, 2 host, 3 Ableton Link
+    int   getLinkPeers() const        { return linkPeers.load(); }
     float getBpm() const              { return bpmUi.load(); }
     float getBarBeat() const          { return barBeatUi.load(); }
     bool  padIsDown (int p) const     { return padDown[(size_t) p].load(); }
@@ -115,6 +120,8 @@ public:
     juce::String getLastEvent() const { const juce::ScopedLock sl (eventLock); return lastEvent; }
     bool  isBrumeOn() const           { return brumeEngine.apvts.getRawParameterValue (brume::id::on)->load() > 0.5f; }
     int   getSelectedSound() const    { return (int) std::lround (apvts.getRawParameterValue (bpad::id::sound)->load() * 3.0f); }
+    int   getActiveSound() const      { return activeSound.load(); }
+    int   getActiveSpeed() const      { return activeSpeed.load(); }
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -140,7 +147,8 @@ private:
     // drums (program 1)
     pad::RmxKit kit;
     std::array<station::SampleVoice, 12> voices; int nextVoice = 0;
-    std::array<bool, 4> rollHeld {}; std::array<int, 4> rollOrder {}; int rollCounter = 0;
+    std::atomic<int> activeSound { -1 }, activeSpeed { 0 };   // latched: sound playing (-1 = none) and speed pad
+    int activeBeforeCombo = -1;
     juce::int64 lastRollIdx = -1; float lastRollRate = 0.0f;
     double lastPad5Time = -10.0, lastPad8Time = -10.0;
     float soundBeforeCombo = 1.0f / 3.0f;
@@ -164,6 +172,10 @@ private:
     std::atomic<float> bpmUi { 124.0f }, barBeatUi { 0.0f };
     juce::Array<double> taps;
     juce::MidiBuffer clockForBrume;
+    std::atomic<int> linkPeers { 0 };
+   #if BRUME_HAS_LINK
+    std::unique_ptr<ableton::Link> link;
+   #endif
 
     // feedback
     std::array<std::atomic<bool>, 8> padDown {};
