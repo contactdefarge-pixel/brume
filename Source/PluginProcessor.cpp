@@ -129,47 +129,44 @@ bool BrumeProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 }
 
 //==============================================================================
-void BrumeProcessor::noiseFromSample (float& l, float& r)
+void BrumeProcessor::buildSpectralNoise()
 {
-    l = r = 0.0f;
-    const int len = (int) nsL.size();
-    for (auto& g : grains)
+    // 2^20 samples (~22 s at 48 kHz): long enough that the loop is never noticed, and seamless by construction
+    constexpr int order = 20, N = 1 << order;
+    juce::dsp::FFT fft (order);
+    juce::Random rnd (0x5eed);
+    auto shaped = [&] (std::vector<float>& out)
     {
-        if (g.age >= grainLen)   // grain finished: start a new one somewhere else in the recording
+        std::vector<float> buf ((size_t) N * 2, 0.0f);   // interleaved complex spectrum, bins 0..N/2
+        for (int k = 1; k < N / 2; ++k)
         {
-            g.age = 0;
-            g.pos = (double) noiseRandom.nextInt (juce::jmax (1, len - grainLen - 2));
+            const double hz = (double) k * fs / N;
+            const double pos = std::log (juce::jlimit (20.0, 20000.0, hz) / 20.0) / std::log (1000.0) * 63.0;
+            const int i0 = juce::jlimit (0, 62, (int) pos); const double fr = juce::jlimit (0.0, 1.0, pos - i0);
+            const double db = noiseSpecDb[(size_t) i0] * (1.0 - fr) + noiseSpecDb[(size_t) i0 + 1] * fr;
+            const double mag = std::pow (10.0, db / 20.0) * (hz > 20000.0 ? 0.0 : 1.0);
+            const double ph = rnd.nextDouble() * juce::MathConstants<double>::twoPi;
+            buf[(size_t) (2 * k)] = (float) (mag * std::cos (ph)); buf[(size_t) (2 * k + 1)] = (float) (mag * std::sin (ph));
         }
-        const float w = grainWin[(size_t) g.age];
-        const auto i = (size_t) g.pos;
-        l += nsL[i] * w; r += nsR[i] * w;
-        g.pos += 1.0; ++g.age;
-    }
+        fft.performRealOnlyInverseTransform (buf.data());
+        out.assign (buf.begin(), buf.begin() + N);
+        double e = 0; for (float v : out) e += (double) v * v;
+        const float g = (float) (0.277 / std::sqrt (e / N + 1e-30));   // same loudness as the generator
+        for (auto& v : out) v *= g;
+    };
+    std::vector<float> a, b, c;
+    shaped (a); shaped (b); shaped (c);
+    const float k = std::sqrt (juce::jlimit (0.0f, 1.0f, noiseCorr)), m = std::sqrt (1.0f - k * k);
+    nsL.resize ((size_t) N); nsR.resize ((size_t) N);
+    for (size_t i = 0; i < (size_t) N; ++i) { nsL[i] = a[i] * m + c[i] * k; nsR[i] = b[i] * m + c[i] * k; }
+    nsRate = fs; nsPos = 0;
 }
 
 void BrumeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     fs = sampleRate;
     maxBlock = std::max (1, samplesPerBlock);
-    if (! rawNoiseL.empty())
-    {
-        // resample the recording to the session rate, set up the grains (sqrt-Hann: constant power for noise)
-        const double ratio = rawNoiseRate / fs;
-        const int outLen = (int) ((double) rawNoiseL.size() / ratio) - 2;
-        nsL.resize ((size_t) juce::jmax (8, outLen)); nsR.resize (nsL.size());
-        for (size_t k = 0; k < nsL.size(); ++k)
-        {
-            const double p = (double) k * ratio; const auto j = (size_t) p; const float fr = (float) (p - (double) j);
-            nsL[k] = rawNoiseL[j] + (rawNoiseL[j + 1] - rawNoiseL[j]) * fr;
-            nsR[k] = rawNoiseR[j] + (rawNoiseR[j + 1] - rawNoiseR[j]) * fr;
-        }
-        grainLen = juce::jmin ((int) (0.15 * fs), (int) nsL.size() / 3);
-        grainWin.resize ((size_t) grainLen);
-        for (int k = 0; k < grainLen; ++k)
-            grainWin[(size_t) k] = std::sqrt (0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) k / (float) grainLen));
-        grains[0] = { 0.0, 0 };
-        grains[1] = { (double) (nsL.size() / 2), grainLen / 2 };
-    }
+    if (! noiseSpecDb.empty() && nsRate != fs) buildSpectralNoise();
     f1Collector.reset (fs);
     f1Midi.ensureSize (4096);
     f1Ready = true;
@@ -348,11 +345,11 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
         sL[i] = preHP[0].processSample (inL[i] * g);
         sR[i] = preHP[1].processSample (inR[i] * g);
 
-        if (! nsL.empty())   // the recorded noise is already voiced: no generator filters
+        if (! nsL.empty())   // the measured noise is already voiced: no generator filters
         {
-            float a, b; noiseFromSample (a, b);
-            const float ng = noiseAmt * noiseGate * noiseTrim * 2.2f;
-            nL[i] = a * ng; nR[i] = b * ng;
+            const float ng = noiseAmt * noiseGate * noiseTrim;
+            nL[i] = nsL[nsPos] * ng; nR[i] = nsR[nsPos] * ng;
+            if (++nsPos >= nsL.size()) nsPos = 0;
             continue;
         }
         // white noise, partly shared between L and R (correlation ~0.5)

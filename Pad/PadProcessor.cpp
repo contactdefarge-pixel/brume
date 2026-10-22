@@ -66,16 +66,13 @@ PadProcessor::PadProcessor()
     brumeEngine.setFreeTremolo (true);
     brumeEngine.setNoiseTrim (0.4f);    // white noise -8 dB here (it was far too loud next to the music)
     {
-        // the real Revolo noise, recorded from the pedal (Resources/revolo_noise.wav)
-        juce::WavAudioFormat wav;
-        std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (new juce::MemoryInputStream (BinaryData::revolo_noise_wav, (size_t) BinaryData::revolo_noise_wavSize, false), true));
-        if (r != nullptr && r->numChannels >= 2)
-        {
-            juce::AudioBuffer<float> b (2, (int) r->lengthInSamples);
-            r->read (&b, 0, b.getNumSamples(), 0, true, true);
-            brumeEngine.setNoiseSample (b.getReadPointer (0), b.getReadPointer (1), b.getNumSamples(), r->sampleRate);
-        }
-    }   // K7 TEMPO = a plain rate in Hz, glides without any cut
+        // the Revolo noise, measured on the pedal recording (White Noise Revolo 2): spectrum and L/R correlation
+        static const float revoloDb[64] = { -35.5f, -35.5f, -35.5f, -28.4f, -28.4f, -28.4f, -24.9f, -24.9f, -24.9f, -23.0f, -19.4f, -19.4f,
+            -15.5f, -13.2f, -11.6f, -8.8f, -6.6f, -6.7f, -3.9f, -1.8f, -0.9f, 0.3f, 3.6f, 2.8f, 1.5f, 1.2f, 1.9f, 2.2f, 1.7f, 1.0f, 0.7f,
+            -0.4f, -0.7f, -0.3f, -0.2f, 0.8f, 0.0f, 1.4f, 1.6f, 0.8f, 1.3f, 2.2f, 2.8f, 2.4f, 3.7f, 3.8f, 2.9f, 2.6f, 3.2f, 3.1f, 2.6f,
+            2.7f, 2.7f, 2.0f, 1.9f, 1.2f, 0.2f, -1.3f, -1.8f, -2.6f, -3.1f, -3.9f, -8.0f, -24.0f };
+        brumeEngine.setNoiseSpectrum (revoloDb, 0.11f);
+    }
     brumeEngine.setPlayHead (&brumeHead);
     for (auto& d : padDown) d.store (false);
     for (auto& h : padHit) h.store (-10.0);
@@ -100,6 +97,7 @@ void PadProcessor::startLink()
 
 PadProcessor::~PadProcessor()
 {
+    irWorker.stopThread (2000);
     stopTimer();
    #if BRUME_HAS_LINK
     if (link) link->enable (false);
@@ -177,7 +175,13 @@ void PadProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     brumeEngine.setRateAndBufferSizeDetails (fs, maxBlock);
     brumeEngine.prepareToPlay (fs, maxBlock);
     kit.prepare (fs);
-    longD.prepare (fs, 0); dubD.prepare (fs, 1); plate.prepare (fs);
+    longD.prepare (fs, 0); dubD.prepare (fs, 1);
+    conv.prepare ({ fs, (juce::uint32) maxBlock, 2 });
+    irWorker.stopThread (2000);
+    irWorker.doneRt = -1.0f;
+    irWorker.build();                 // first impulse response now, then the worker follows TIME / SIZE
+    conv.reset();
+    irWorker.startThread();
     longD.setSpread (0.35f);
     beatD.prepare (fs, 0); dub4.prepare (fs, 1); spiral.prepare (fs); shimmer.prepare (fs); brake.prepare (fs);
     for (auto& v : sm4) v = 0.0f;
@@ -656,7 +660,7 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     // TIME is continuous: the repeats bend in pitch while it moves (tape style, as on the DJM-V10)
     longD.setTime (spb / 4.0 * std::pow (4.0, (double) timeK));     // 1/4 .. 1 beat
     dubD.setTime (spb / 8.0 * std::pow (8.0, (double) timeK));      // 1/8 .. 1 beat
-    plate.setParameters (0.8f * std::pow (12.0f, timeK), size, 0.85f - 0.35f * size);
+    revRt.store (0.8f * std::pow (12.0f, timeK)); revSize.store (size); revBright.store (0.85f - 0.35f * size);
     // feedback: low (repeats die fast) -> maximum (repeats go on until the effect is cut). A KILL caps it so tails end.
     auto feedback = [&] (int k) { const float f = 0.1f + 0.86f * size; return fx[(size_t) k].killed ? std::min (f, 0.5f) : f; };
     const float fbLong = feedback (3), fbDub = std::min (0.95f, feedback (4));
@@ -705,11 +709,16 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
         dub4.process (l * sm4[2], r * sm4[2], fbDub4, o0, o1);      el += o0 * 0.95f; er += o1 * 0.95f;
         shimmer.process (l * sm4[3], r * sm4[3], shim, o0, o1);     el += o0 * 1.1f;  er += o1 * 1.1f;
 
-        // plate reverb: fed by the music and a little of the echoes
-        plate.process ((l + el * 0.25f) * sm[5], (r + er * 0.25f) * sm[5], o0, o1);
-        rl[i] = o0; rr[i] = o1;
+        // reverb send: the music and a little of the echoes (convolved after the loop)
+        rl[i] = (l + el * 0.25f) * sm[5]; rr[i] = (r + er * 0.25f) * sm[5];
         L[i] = l + el;
         R[i] = r + er;
+    }
+    {
+        juce::dsp::AudioBlock<float> rb (revBuf);
+        auto sub = rb.getSubBlock (0, (size_t) n);
+        conv.process (juce::dsp::ProcessContextReplacing<float> (sub));
+        revBuf.applyGain (0, n, 1.3f);
     }
     // vinyl brake (program 4, PAD 5 held): the whole output slows down to a stop in one beat
     brake.engage (brakeHeld.load(), fs, 60.0 / bpm);
@@ -826,6 +835,29 @@ void PadProcessor::setStateInformation (const void* data, int sizeInBytes)
     state.removeChild (b, nullptr);
     state.removeChild (map, nullptr);
     apvts.replaceState (state);
+}
+
+//==============================================================================
+void PadProcessor::IrWorker::build()
+{
+    doneRt = p.revRt.load(); doneSize = p.revSize.load(); doneBright = p.revBright.load();
+    juce::AudioBuffer<float> ir;
+    v10::makeReverbIR (ir, p.fs, doneRt, doneSize, doneBright, 0x4859u);
+    p.conv.loadImpulseResponse (std::move (ir), p.fs, juce::dsp::Convolution::Stereo::yes, juce::dsp::Convolution::Trim::no, juce::dsp::Convolution::Normalise::no);
+}
+
+void PadProcessor::IrWorker::run()
+{
+    while (! threadShouldExit())
+    {
+        wait (40);
+        const bool changed = std::abs (p.revRt.load() - doneRt) > 0.02f * doneRt || std::abs (p.revSize.load() - doneSize) > 0.02f
+                          || std::abs (p.revBright.load() - doneBright) > 0.02f;
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        if (changed && ! pending) { pending = true; lastChange = now; }
+        // rebuild once the knob has settled a little (the convolution crossfades to the new response)
+        if (pending && now - lastChange > 120.0) { pending = false; build(); }
+    }
 }
 
 //==============================================================================

@@ -49,11 +49,9 @@ public:
     explicit BrumeProcessor (bool embedded = false);
     void setRevoloNoise (bool r) { revoloNoise = r; }
     void setNoiseTrim (float g)    { noiseTrim = g; }   // embedded use: overall noise level
-    // embedded use: play a recorded noise (e.g. the real Revolo) instead of the generator; call before prepareToPlay
-    void setNoiseSample (const float* l, const float* r, int length, double sampleRate)
-    {
-        rawNoiseL.assign (l, l + length); rawNoiseR.assign (r, r + length); rawNoiseRate = sampleRate;
-    }
+    // embedded use: noise synthesised with a measured spectrum (dB at 64 log-spaced points, 20 Hz - 20 kHz) and a
+    // left/right correlation; built once per sample rate as a long seamless loop (FFT, random phases): no cuts, no repeat heard
+    void setNoiseSpectrum (const float* db64, float lrCorrelation) { noiseSpecDb.assign (db64, db64 + 64); noiseCorr = lrCorrelation; }
     void setSlowNoiseDown (bool b) { slowNoiseDown = b; }
     void setFreeTremolo (bool b)   { freeTremolo = b; }   // tremolo always in Hz, never locked to the beat
     ~BrumeProcessor() override;
@@ -159,14 +157,9 @@ private:
     juce::Random noiseRandom;
     bool revoloNoise = false, slowNoiseDown = false;
     float noiseTrim = 1.0f;
-    // recorded noise, played by two overlapping grains from random places (no audible loop)
-    std::vector<float> rawNoiseL, rawNoiseR, nsL, nsR;
-    double rawNoiseRate = 44100.0;
-    struct Grain { double pos = 0.0; int age = 0; };
-    Grain grains[2];
-    int grainLen = 4096;
-    std::vector<float> grainWin;
-    inline void noiseFromSample (float& l, float& r);
+    std::vector<float> noiseSpecDb, nsL, nsR;
+    float noiseCorr = 0.1f; double nsRate = 0.0; size_t nsPos = 0;
+    void buildSpectralNoise();
 
     // tap tempo (message thread)
     juce::Array<double> taps;

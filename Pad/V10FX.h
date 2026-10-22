@@ -61,7 +61,16 @@ inline float safe (float x) { const float a = std::abs (x); return a < 1.0f ? x 
 struct Delay
 {
     Line l[2]; OnePole hp[2], lp[2], lp2[2]; Allpass dif[2][2];
-    double fs = 48000.0, cur = 4800.0, target = 4800.0, glide = 0.0001;
+    double fs = 48000.0, cur = 4800.0, target = 4800.0, smooth = 4800.0, glide = 0.0001, maxRate = 0.75;
+    // feedback filters for the clean delay (2-pole, like the filter section of a studio delay): repeats get darker and thinner
+    struct Biquad { float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
+        void setLP (double fs, double hz, double q) { const double w = juce::MathConstants<double>::twoPi * hz / fs, al = std::sin (w) / (2 * q), c = std::cos (w), a0 = 1 + al;
+            b0 = (float) ((1 - c) / 2 / a0); b1 = (float) ((1 - c) / a0); b2 = b0; a1 = (float) (-2 * c / a0); a2 = (float) ((1 - al) / a0); }
+        void setHP (double fs, double hz, double q) { const double w = juce::MathConstants<double>::twoPi * hz / fs, al = std::sin (w) / (2 * q), c = std::cos (w), a0 = 1 + al;
+            b0 = (float) ((1 + c) / 2 / a0); b1 = (float) (-(1 + c) / a0); b2 = b0; a1 = (float) (-2 * c / a0); a2 = (float) ((1 - al) / a0); }
+        inline float tick (float x) { const float y = b0 * x + z1; z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y; return y; }
+        void clear() { z1 = z2 = 0; } };
+    Biquad fHp[2], fLp[2];
     float wow = 0.0f, wowInc = 0.0f, spread = 0.0f;
     int mode = 0;
 
@@ -76,27 +85,33 @@ struct Delay
             lp2[c].set (fs, mode == 1 ? 4200.0 : 16000.0);
             dif[c][0].prepare ((int) ((c ? 0.0079 : 0.0071) * fs), 0.45f);
             dif[c][1].prepare ((int) ((c ? 0.0127 : 0.0113) * fs), 0.4f);
+            fHp[c].setHP (fs, 140.0, 0.6); fLp[c].setLP (fs, 7000.0, 0.65);
         }
-        glide = 1.0 - std::exp (-1.0 / (0.15 * fs));
+        glide = 1.0 - std::exp (-1.0 / (0.06 * fs));
         wowInc = (float) (juce::MathConstants<double>::twoPi * 0.55 / fs);
         cur = target;
     }
-    void clear() { for (int c = 0; c < 2; ++c) { l[c].clear(); hp[c].clear(); lp[c].clear(); lp2[c].clear(); dif[c][0].clear(); dif[c][1].clear(); } }
+    void clear() { for (int c = 0; c < 2; ++c) { l[c].clear(); hp[c].clear(); lp[c].clear(); lp2[c].clear(); dif[c][0].clear(); dif[c][1].clear(); fHp[c].clear(); fLp[c].clear(); } }
     void setTime (double samples) { target = juce::jlimit (8.0, (double) l[0].size - 8.0, samples); }
+    void jumpTo (double samples) { setTime (samples); cur = smooth = target; }
     void setSpread (float s) { spread = s; }   // 0 = straight stereo, 1 = full ping-pong
 
     // returns the wet signal; fb = feedback (0..0.98)
     inline void process (float inL, float inR, float fb, float& outL, float& outR)
     {
-        cur += (target - cur) * glide;
+        // "repitch": the read head travels at a limited speed, like a tape changing speed. A long time change
+        // is a long, steady pitch bend (up when the time gets shorter, down when it gets longer).
+        smooth += (target - smooth) * glide;
+        cur += juce::jlimit (-maxRate, maxRate, smooth - cur);
         double d = cur;
         if (mode == 1) { wow += wowInc; if (wow > juce::MathConstants<float>::twoPi) wow -= juce::MathConstants<float>::twoPi; d += std::sin (wow) * 0.0012 * fs; }
         float y[2] = { l[0].hermite (d), l[1].hermite (d) };
         float f[2];
         for (int c = 0; c < 2; ++c)
         {
-            float v = lp2[c].lp (lp[c].lp (hp[c].hp (y[c])));
-            if (mode == 1) v = std::tanh (dif[c][1].tick (dif[c][0].tick (v)) * 1.15f) / 1.15f;
+            float v;
+            if (mode == 1) { v = lp2[c].lp (lp[c].lp (hp[c].hp (y[c]))); v = std::tanh (dif[c][1].tick (dif[c][0].tick (v)) * 1.15f) / 1.15f; }
+            else v = fLp[c].tick (fHp[c].tick (y[c]));
             f[c] = v * fb;
         }
         // ping-pong blend: the repeats alternate sides as spread goes up
@@ -188,6 +203,63 @@ struct Plate
         outL = outHpL.hp (l) * gain; outR = outHpR.hp (r) * gain;
     }
 };
+
+// --- Impulse response for the convolution reverb (the approach of Ableton's Hybrid Reverb / convolution reverbs):
+// decorrelated noise per channel, split in 5 bands that each decay at their own rate (highs die first),
+// sparse early reflections, pre-delay, a slow density build-up. Built off the audio thread.
+inline void makeReverbIR (juce::AudioBuffer<float>& ir, double fs, float rt60, float size, float bright, juce::uint32 seed)
+{
+    rt60 = juce::jlimit (0.3f, 12.0f, rt60);
+    const double pre = 0.004 + 0.04 * size;
+    const int len = (int) ((pre + rt60 * 1.2) * fs) + 64;
+    ir.setSize (2, len, false, true, true);
+    ir.clear();
+    static const double xo[4] = { 250.0, 1000.0, 4000.0, 8000.0 };
+    const double rtMul[5] = { 1.1, 1.0, 0.85 + 0.15 * bright, 0.55 + 0.35 * bright, 0.3 + 0.4 * bright };
+    juce::Random rnd ((juce::int64) seed);
+    for (int c = 0; c < 2; ++c)
+    {
+        auto* d = ir.getWritePointer (c);
+        std::vector<float> noise ((size_t) len);
+        for (auto& v : noise) v = rnd.nextFloat() * 2.0f - 1.0f;
+        // split into bands with 2-pole low-passes (differences of low-passes = bands that sum back flat)
+        std::vector<float> prevLp ((size_t) len, 0.0f), curLp ((size_t) len);
+        for (int b = 0; b < 5; ++b)
+        {
+            if (b < 4)
+            {
+                Delay::Biquad f1, f2; f1.setLP (fs, xo[b], 0.5); f2.setLP (fs, xo[b], 0.5);
+                for (int i = 0; i < len; ++i) curLp[(size_t) i] = f2.tick (f1.tick (noise[(size_t) i]));
+            }
+            else curLp = noise;
+            const double rt = rt60 * rtMul[b], k = -6.907755 / (rt * fs);
+            for (int i = (int) (pre * fs); i < len; ++i)
+            {
+                const double t = (double) i - pre * fs;
+                d[i] += (float) ((curLp[(size_t) i] - prevLp[(size_t) i]) * std::exp (k * t));
+            }
+            prevLp = curLp;
+        }
+        // density build-up over the first 40-90 ms (a tail, not a click), then sparse early reflections on top
+        const int ramp = (int) ((0.04 + 0.05 * size) * fs), p0 = (int) (pre * fs);
+        for (int i = 0; i < ramp && p0 + i < len; ++i) d[p0 + i] *= std::sqrt ((float) i / (float) ramp);
+        for (int e = 0; e < 10; ++e)
+        {
+            const int at = p0 + (int) ((0.003 + rnd.nextDouble() * (0.03 + 0.06 * size)) * fs);
+            if (at < len) d[at] += (float) ((e % 2 ? -1.0 : 1.0) * (0.9 - 0.07 * e) * 8.0);
+        }
+        // keep the low end out of the tail, gentle top end
+        Delay::Biquad hp, lp; hp.setHP (fs, 110.0, 0.7); lp.setLP (fs, 12000.0 + 6000.0 * bright, 0.7);
+        for (int i = 0; i < len; ++i) d[i] = lp.tick (hp.tick (d[i]));
+    }
+    // unit energy per channel: the same send gives the same loudness whatever the decay
+    for (int c = 0; c < 2; ++c)
+    {
+        double e = 0; const auto* d = ir.getReadPointer (c);
+        for (int i = 0; i < len; ++i) e += (double) d[i] * d[i];
+        ir.applyGain (c, 0, len, (float) (1.0 / std::sqrt (e + 1e-20)));
+    }
+}
 
 // --- Spiral (DJM-V10 beat FX): an echo whose repeats are smeared into a reverb, time change bends the pitch --
 struct Spiral

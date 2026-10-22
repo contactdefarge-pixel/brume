@@ -212,7 +212,18 @@ private:
     // effects (program 1)
     std::array<pad::FxKnob, 9> fx;   // indices = function slots (p1KnobId); 2 LPF, 3-5 + 8 the sends (KILL acts on them)
     v10::Delay longD, dubD, beatD, dub4;
-    v10::Spiral spiral; v10::Shimmer shimmer; v10::Plate plate; v10::VinylBrake brake;
+    v10::Spiral spiral; v10::Shimmer shimmer; v10::VinylBrake brake;
+    // REVERB (program 1): convolution with an impulse response synthesised from TIME / SIZE, rebuilt in the background
+    juce::dsp::Convolution conv { juce::dsp::Convolution::NonUniform { 1024 } };
+    std::atomic<float> revRt { 2.0f }, revSize { 0.5f }, revBright { 0.6f };
+    struct IrWorker : public juce::Thread
+    {
+        PadProcessor& p; float doneRt = -1, doneSize = -1, doneBright = -1; double lastChange = 0; bool pending = false;
+        explicit IrWorker (PadProcessor& o) : juce::Thread ("Hydra IR"), p (o) {}
+        void run() override;
+        void build();
+    };
+    IrWorker irWorker { *this };
     std::array<pad::FxKnob, 4> fx4;   // program 4 amounts (KILL acts on them)
     float sm4[4] {};
     std::atomic<bool> brakeHeld { false };
