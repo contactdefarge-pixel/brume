@@ -658,7 +658,7 @@ void PadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     const double spb = 60.0 / bpm * fs;   // samples per beat
     const float size = fx[6].target, timeK = fx[7].target;
     // TIME is continuous: the repeats bend in pitch while it moves (tape style, as on the DJM-V10)
-    longD.setTime (spb / 4.0 * std::pow (4.0, (double) timeK));     // 1/4 .. 1 beat
+    longD.setTime (spb / 8.0 * std::pow (16.0, (double) timeK));    // 1/8 .. 2 beats
     dubD.setTime (spb / 8.0 * std::pow (8.0, (double) timeK));      // 1/8 .. 1 beat
     revRt.store (0.8f * std::pow (12.0f, timeK)); revSize.store (size); revBright.store (0.85f - 0.35f * size);
     // feedback: low (repeats die fast) -> maximum (repeats go on until the effect is cut). A KILL caps it so tails end.

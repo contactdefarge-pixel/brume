@@ -136,7 +136,7 @@ namespace
 "   K8 REVERB : réverbe à convolution (comme la Hybrid Reverb d'Ableton), dense et douce ; sa réponse se recalcule quand tu tournes SIZE ou TIME.\n"
 "   K5 SIZE / FEEDBACK : pour les delays et le dub echo, la durée des répétitions (à fond = elles continuent "
 "jusqu'au KILL FX) ; pour la réverbe, la taille (pré-délai et densité), sans jamais déformer le son.\n"
-"   K6 TIME : la durée, en continu. Long delay de 1/4 à 1 temps, dub echo de 1/8 à 1 temps : tourner TIME "
+"   K6 TIME : la durée, en continu. Long delay de 1/8 à 2 temps, dub echo de 1/8 à 1 temps : tourner TIME "
 "pendant que les répétitions sonnent les fait glisser en hauteur, comme une bande (DJM-V10). Réverbe de 0,8 à 10 s. "
 "Tout est calé sur le tempo de Traktor.\n\n"
 "Baisser un envoi (K4, K7, K8) laisse la queue sonner. KILL FX ouvre le LPF, ferme les envois et réduit le feedback pour que les "
