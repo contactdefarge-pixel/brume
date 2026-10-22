@@ -315,8 +315,8 @@ struct RmxKit
 // 808 and 909 are synthesised in the style of those machines; RMX = the 4 X-PAD samples + 4 909 extras.
 namespace pp
 {
-    constexpr int numKits = 3, soundsPerKit = 8, numPatterns = 8;
-    inline const char* kitName (int k) { static const char* n[] = { "808", "909", "RMX" }; return n[juce::jlimit (0, numKits - 1, k)]; }
+    constexpr int numKits = 4, soundsPerKit = 8, numPatterns = 8, userKit = 3;
+    inline const char* kitName (int k) { static const char* n[] = { "808", "909", "RMX", "USER" }; return n[juce::jlimit (0, numKits - 1, k)]; }
     inline const char* soundName (int s) { static const char* n[] = { "KICK", "SNARE", "CLAP", "CL HAT", "OP HAT", "RIM", "TOM", "CYMBAL" }; return n[juce::jlimit (0, 7, s)]; }
     // 8 starting patterns (bit n = step n+1); the steps can then be edited on the pads
     inline int patternMask (int p)
@@ -393,6 +393,8 @@ namespace pp
             // ---- RMX: the X-PAD samples + 909 extras ----
             s[2][0] = rmx[0]; s[2][1] = rmx[1]; s[2][2] = rmx[2]; s[2][3] = rmx[3];
             s[2][4] = s[1][4]; s[2][5] = s[1][5]; s[2][6] = s[1][6]; s[2][7] = s[1][7];
+            // ---- USER: the user's own samples (loaded by the processor); an empty slot plays the RMX kit sound ----
+            for (int i = 0; i < soundsPerKit; ++i) s[3][(size_t) i] = s[2][(size_t) i];
         }
     };
 }

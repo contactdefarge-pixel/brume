@@ -24,6 +24,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    void openUserKit() { userKit.setBounds (getLocalBounds()); userKit.setVisible (true); userKit.toFront (false); }
     static constexpr int baseW = 1372, baseH = 360;   // controller on the left, info panel on the right (wide and short, fits above / below Traktor)
 
 private:
@@ -58,18 +59,32 @@ private:
         void resized() override;
     };
 
+    // USER kit of the Pattern Player: one row per sound, choose / clear a file
+    struct UserKit : public juce::Component
+    {
+        PadEditor& ed;
+        juce::OwnedArray<juce::TextButton> choose, clear;
+        juce::TextButton close { "X" };
+        std::unique_ptr<juce::FileChooser> chooser;
+        explicit UserKit (PadEditor&);
+        void paint (juce::Graphics&) override;
+        void resized() override;
+        void pick (int slot);
+    };
+
     PadProcessor& proc;
     PadLookAndFeel lnf;
     Body body { *this };
     std::vector<std::unique_ptr<PadButton>> pads;
     std::array<juce::Slider, 8> knobs;
     juce::TextButton progBtn { "PROGRAM" }, noteBtn { "NOTE" }, pcBtn { "PROG CHNG" }, ccBtn { "CC" },
-                     setupBtn { "SETUP LPD8" }, helpBtn { "WIKI" },
+                     setupBtn { "SETUP LPD8" }, helpBtn { "WIKI" }, samplesBtn { "SAMPLES" },
                      fxInputBtn { "INPUT" }, fxHydraBtn { "HYDRA" };
     juce::Slider bpmSlider, masterKnob, offsetSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt, masterAtt, offsetAtt;
     UpdateBanner updateBanner;
     Help help;
+    UserKit userKit { *this };
     bool programSelectMode = false;
     int shownProg = -1;
     float meter[2] {}, peakHold[2] {}; int holdTicks[2] {}; int clipTicks = 0;

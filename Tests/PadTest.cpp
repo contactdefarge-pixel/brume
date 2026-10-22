@@ -84,22 +84,42 @@ int main()
 {
     juce::ScopedJuceInitialiser_GUI gui;
     {
-        // REVERB alone: 0.5 s noise burst, level in and out, then the decay
-        pad::HallReverb rv; rv.prepare (fs); rv.setParameters (2.3f, 0.5f, 0.6f);
-        juce::Random rnd (7); const int blk = 512; std::vector<float> l (blk), r (blk);
-        double inE = 0, outE = 0; std::vector<double> tail;
-        for (int b = 0; b < (int) (4.0 * fs / blk); ++b)
+        // PLATE reverb alone: 0.5 s noise burst at several TIME / SIZE settings: decay and level must stay sane
+        for (auto set : { std::pair<float, float> { 1.5f, 0.2f }, { 3.0f, 0.5f }, { 8.0f, 1.0f } })
         {
-            double e = 0;
-            for (int i = 0; i < blk; ++i) { const float x = b * blk < fs * 0.5 ? (rnd.nextFloat() * 2 - 1) * 0.3f : 0.0f; l[(size_t) i] = x; r[(size_t) i] = x; inE += x * x; }
-            rv.process (l.data(), r.data(), blk);
-            for (int i = 0; i < blk; ++i) e += l[(size_t) i] * l[(size_t) i];
-            outE += e; tail.push_back (10 * std::log10 (e / blk + 1e-20));
+            v10::Plate rv; rv.prepare (fs); rv.setParameters (set.first, set.second, 0.6f);
+            for (int i = 0; i < (int) fs; ++i) { float a, b; rv.process (0, 0, a, b); }   // let parameters settle
+            juce::Random rnd (7); double inE = 0, outE = 0; std::vector<double> e; double acc = 0; int cnt = 0; float peak = 0;
+            for (int i = 0; i < (int) (10.0 * fs); ++i)
+            {
+                const float x = i < fs * 0.5 ? (rnd.nextFloat() * 2 - 1) * 0.3f : 0.0f; inE += x * x;
+                float a, b; rv.process (x, x, a, b); outE += a * a; acc += a * a; peak = std::max (peak, std::abs (a));
+                if (++cnt == 512) { e.push_back (10 * std::log10 (acc / 512 + 1e-20)); acc = 0; cnt = 0; }
+            }
+            const size_t s0 = (size_t) (0.6 * fs / 512); size_t t30 = s0;
+            for (size_t i = s0; i < e.size(); ++i) if (e[i] > e[s0] - 30.0) t30 = i;
+            std::printf ("plate RT %.1f size %.1f: RT60 measured %.1f s, out/in %5.1f dB, peak %.2f\n", set.first, set.second,
+                         2.0 * (double) (t30 - s0) * 512 / fs, 10 * std::log10 (outE / inE), peak);
         }
-        int t60 = 0; const double ref = tail[(size_t) (0.5 * fs / blk)];
-        for (size_t i = (size_t) (0.5 * fs / blk); i < tail.size(); ++i) if (tail[i] > ref - 30.0) t60 = (int) i;
-        std::printf ("hall reverb          : out/in energy %5.1f dB, -30 dB after %.2f s (x2 = RT60 %.1f s, set 2.3)\n",
-                     10 * std::log10 (outE / inE), (t60 - 0.5 * fs / blk) * blk / fs, 2 * (t60 - 0.5 * fs / blk) * blk / fs);
+        // clean delay: a 1 kHz tone through 4 repeats must stay clean (harmonics far below the tone)
+        {
+            v10::Delay d; d.prepare (fs, 0); d.setTime (0.1 * fs);
+            std::vector<float> out;
+            for (int i = 0; i < (int) (1.0 * fs); ++i)
+            {
+                const float x = i < 0.08 * fs ? 0.7f * (float) std::sin (2 * juce::MathConstants<double>::pi * 1000.0 * i / fs) : 0.0f;
+                float a, b; d.process (x, x, 0.9f, a, b); out.push_back (a);
+            }
+            // 4th repeat window
+            const int st = (int) (0.42 * fs), len = 2048; double h1 = 0, h3 = 0;
+            for (int k = 0; k < len; ++k)
+            {
+                const double w = 0.5 - 0.5 * std::cos (2 * juce::MathConstants<double>::pi * k / len), t = (double) k / fs;
+                h1 += out[(size_t) (st + k)] * w * std::sin (2 * juce::MathConstants<double>::pi * 1000.0 * t);
+                h3 += out[(size_t) (st + k)] * w * std::sin (2 * juce::MathConstants<double>::pi * 3000.0 * t);
+            }
+            std::printf ("clean delay          : 3rd harmonic %.1f dB below the tone after 4 repeats\n", 20 * std::log10 (std::abs (h1) / (std::abs (h3) + 1e-12)));
+        }
     }
     {
         Rig r;
@@ -177,9 +197,9 @@ int main()
             const int st = r.p.getPatternSteps();
             r.note (12, 57, true); r.note (12, 58, true); r.note (12, 57, false); r.note (12, 58, false); r.run (0.05);
             std::printf ("PAD 6+7 combo        : INPUT %s (expect off), steps unchanged %s\n", r.p.fxInputOn() ? "ON" : "off", r.p.getPatternSteps() == st ? "yes" : "NO");
-            r.note (13, 64, true); r.note (13, 64, false); r.cc (13, 100, 64); r.run (0.05);
-            std::printf ("GLOBAL program       : program %d (expect 3), INPUT %s (expect on), master %s\n", r.p.getProgram(), r.p.fxInputOn() ? "on" : "OFF", r.p.getKnobText (3, 0).toRawUTF8());
-            r.cc (13, 100, 114); r.note (12, 52, true); r.note (12, 52, false); r.run (0.05); r.note (12, 52, true); r.note (12, 52, false); r.run (0.05);
+            r.note (13, 65, true); r.note (13, 65, false); r.cc (13, 100, 64); r.run (0.05);   // P4: PAD 6 = INPUT back on
+            std::printf ("V10 FX program       : program %d (expect 3), INPUT %s (expect on), K1 %s\n", r.p.getProgram(), r.p.fxInputOn() ? "on" : "OFF", r.p.getKnobText (3, 0).toRawUTF8());
+            r.note (12, 52, true); r.note (12, 52, false); r.run (0.05); r.note (12, 52, true); r.note (12, 52, false); r.run (0.05);
         }
         const float tremBefore = r.p.getKnobValue (1, 5);
         r.p.killFx(); r.run (2.5);
@@ -234,6 +254,67 @@ int main()
         snap ("pad-p3.png");
         r.p.setPatternPage (1); r.run (0.1);
         snap ("pad-p3b.png");
+        r.p.selectProgram (3); r.p.knobFromScreen (4, 0.5f, 3); r.p.knobFromScreen (7, 0.4f, 3); r.run (0.2);
+        snap ("pad-p4.png");
+        if (auto* pe = dynamic_cast<PadEditor*> (ed.get())) pe->openUserKit();
+        snap ("pad-userkit.png");
+    }
+    // program 4 (V10 FX): each effect adds a tail after the music stops; VINYL BRAKE stops the sound
+    {
+        for (int k = 0; k < 4; ++k)
+        {
+            Rig r; r.p.selectProgram (3);
+            r.p.knobFromScreen (4 + k, 0.8f, 3); r.run (3.0);
+            r.track.on = false; const auto t = r.run (1.5);
+            std::printf ("V10 %-13s     : tail after the music stops %6.1f dB, peak %5.1f dB\n", knobLabel (3, 4 + k), t.rmsDb(), t.peakDb());
+        }
+        {
+            // listening demo: the track, then each effect for 4 beats-ish, music cut to hear the tail, then reverb (P1 K8)
+            Rig d; d.recording = true; d.p.selectProgram (3); d.run (2.0);
+            for (int k = 0; k < 4; ++k)
+            {
+                d.track.on = true; d.p.knobFromScreen (4 + k, 0.7f, 3); d.run (3.9);
+                d.p.knobFromScreen (k, 0.2f, 3); d.run (1.0); d.p.knobFromScreen (k, 0.8f, 3); d.run (1.0);   // time sweep: pitch glide
+                d.p.knobFromScreen (4 + k, 0.0f, 3); d.track.on = false; d.run (2.5);
+            }
+            d.track.on = true; d.p.selectProgram (0); d.p.knobFromScreen (7, 0.6f, 0); d.p.knobFromScreen (5, 0.6f, 0); d.run (4.0);
+            d.p.knobFromScreen (7, 0.0f, 0); d.track.on = false; d.run (4.0);
+            saveWav (d.rec, "pad-v10-demo.wav");
+        }
+        Rig r; r.p.selectProgram (3); r.run (1.0);
+        r.p.padFromScreen (4, true, 3); r.run (0.7); const auto stopped = r.run (0.5);
+        r.p.padFromScreen (4, false, 3); const auto back = r.run (0.5);
+        std::printf ("VINYL BRAKE          : held %6.1f dB (expect silent), released %6.1f dB (music back)\n", stopped.rmsDb(), back.rmsDb());
+    }
+    // Pattern Player USER kit: a 200 Hz test tone loaded as KICK must be what plays
+    {
+        juce::File f = juce::File::getCurrentWorkingDirectory().getChildFile ("user-kick-test.wav");
+        {
+            f.deleteFile(); juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (f), 44100.0, 1, 16, {}, 0));
+            juce::AudioBuffer<float> b (1, 13230);
+            for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, 0.5f * (float) std::sin (2 * juce::MathConstants<double>::pi * 200.0 * i / 44100.0));
+            w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+        }
+        Rig r; r.track.on = false; r.recording = true; r.p.selectProgram (2);
+        const bool ok = r.p.loadUserSample (0, f);
+        auto set = [&] (const char* pid, float v) { r.p.apvts.getParameter (pid)->setValueNotifyingHost (v); };
+        set (id::ppKit, 1.0f); set (id::ppSound, 0.0f); set (id::ppPattern, 0.0f); set (id::ppVolume, 0.8f); set (id::ppDecay, 1.0f);
+        const auto um = r.run (2.0);
+        // energy at 200 Hz vs 400 Hz over the recording
+        double e200 = 0, e400 = 0; const auto* d = r.rec.getReadPointer (0);
+        for (int i = 0; i < r.rec.getNumSamples(); ++i)
+        {
+            e200 += d[i] * std::sin (2 * juce::MathConstants<double>::pi * 200.0 * i / fs);
+            e400 += d[i] * std::sin (2 * juce::MathConstants<double>::pi * 400.0 * i / fs);
+        }
+        std::printf ("USER kit             : loaded %s, kit %s, path kept %s\n", ok ? "yes" : "NO",
+                     r.p.apvts.getParameter (id::ppKit)->getCurrentValueAsText().toRawUTF8(), r.p.getUserSamplePath (0).isNotEmpty() ? "yes" : "NO");
+        std::printf ("USER kit sound       : %6.1f dB rms, playing the loaded file %s\n", um.rmsDb(), std::abs (e200) > 5 * std::abs (e400) ? "yes" : "NO");
+        juce::MemoryBlock mb; r.p.getStateInformation (mb);
+        PadProcessor q; q.setStateInformation (mb.getData(), (int) mb.getSize());
+        std::printf ("USER kit restored    : %s\n", q.getUserSamplePath (0) == f.getFullPathName() ? "yes" : "NO");
+        f.deleteFile();
     }
     // tremolo synced to the MIDI clock while K7 TEMPO sweeps across the division boundaries (must not cut)
     {

@@ -7,6 +7,7 @@
 #include "../Source/Reverb.h"
 #include "../Station/StationDSP.h"
 #include "PadFX.h"
+#include "V10FX.h"
 #if BRUME_HAS_LINK
  #include <ableton/Link.hpp>
 #endif
@@ -34,6 +35,11 @@ namespace bpad
         static constexpr const char* fxInput = "fx_src_input";     // the music coming in
         static constexpr const char* fxHydra = "fx_src_hydra";     // Hydra's own sounds (X-PAD, pattern)
         static constexpr const char* lpf = "p1_lpf";
+        // program 4: DJM-V10 effects (top row = time / size, bottom row = amount)
+        static constexpr const char* v10DelayTime = "v10_delay_time"; static constexpr const char* v10Delay = "v10_delay";
+        static constexpr const char* v10SpiralTime = "v10_spiral_time"; static constexpr const char* v10Spiral = "v10_spiral";
+        static constexpr const char* v10DubTime = "v10_dub_time"; static constexpr const char* v10Dub = "v10_dub";
+        static constexpr const char* v10ShimmerSize = "v10_shimmer_size"; static constexpr const char* v10Shimmer = "v10_shimmer";
         // program 3: Pattern Player
         static constexpr const char* ppVolume = "p3_volume"; static constexpr const char* ppPitch = "p3_pitch";
         static constexpr const char* ppDecay = "p3_decay";   static constexpr const char* ppDuck = "p3_duck";
@@ -54,6 +60,12 @@ namespace bpad
                                      brume::id::noise, brume::id::tremolo, brume::id::tempo, brume::id::filter };
         return ids[juce::jlimit (0, 7, k)];
     }
+    inline const char* p4KnobId (int k)
+    {
+        static const char* ids[] = { id::v10DelayTime, id::v10SpiralTime, id::v10DubTime, id::v10ShimmerSize, id::v10Delay, id::v10Spiral, id::v10Dub, id::v10Shimmer };
+        return ids[juce::jlimit (0, 7, k)];
+    }
+    inline const char* p4AmountId (int k) { return p4KnobId (4 + juce::jlimit (0, 3, k)); }
     inline const char* p3KnobId (int k)
     {
         static const char* ids[] = { id::ppVolume, id::ppPitch, id::ppDecay, id::ppDuck, id::ppKit, id::ppSound, id::ppPattern, id::ppSwing };
@@ -64,7 +76,8 @@ namespace bpad
     {
         static const char* p3[] = { "VOLUME", "PITCH", "DECAY", "DUCK", "KIT", "SOUND", "PATTERN", "SWING" };
         if (prog == 2) return p3[k];
-        if (prog == 3) return k == 0 ? "MASTER" : k == 1 ? "SHORT DELAY" : "";
+        static const char* p4[] = { "DELAY TIME", "SPIRAL TIME", "DUB TIME", "SHIMMER SIZE", "DELAY", "SPIRAL", "DUB ECHO", "SHIMMER" };
+        if (prog == 3) return p4[k];
         static const char* p1[] = { "DRUMS VOL", "PITCH", "LPF", "LONG DELAY", "DUB ECHO", "REVERB", "SIZE / FB", "TIME" };
         static const char* p2[] = { "REVERB", "CHARACTER", "LENGTH", "AIR", "NOISE", "TREMOLO", "TEMPO", "FILTER" };
         if (prog == 0) return p1[p1Slot (k)];
@@ -77,13 +90,13 @@ namespace bpad
         static const char* p1[] = { "1/4", "1/8", "1/16", "1/32", "KICK", "SNARE", "CLAP", "HAT" };
         static const char* p2[] = { "", "", "", "", "ON / OFF", "TAP", "", "HOLD" };   // bottom row unused
         if (prog == 0) return p1[pad];
-        static const char* p4[] = { "", "", "", "", "FX SOURCE INPUT", "FX SOURCE HYDRA", "", "" };
+        static const char* p4[] = { "", "", "", "", "VINYL BRAKE", "FX SOURCE INPUT", "FX SOURCE HYDRA", "" };
         if (prog == 1) return p2[pad];
         if (prog == 3) return p4[pad];
         return "-";
     }
     // Pattern Player: steps read like a page, top row first (PAD 5-8 = steps 1-4, PAD 1-4 = steps 5-8)
-    inline const char* programName (int p) { static const char* n[] = { "X-PAD + FX", "WHITE NOISE", "PATTERN PLAYER", "GLOBAL" }; return n[juce::jlimit (0, 3, p)]; }
+    inline const char* programName (int p) { static const char* n[] = { "X-PAD + FX", "WHITE NOISE", "PATTERN PLAYER", "V10 FX" }; return n[juce::jlimit (0, 3, p)]; }
     inline int stepOfPad (int pad) { return pad >= 4 ? pad - 4 : pad + 4; }
     inline float rollPerBeat (int pad) { static const float r[] = { 1.0f, 2.0f, 4.0f, 8.0f }; return r[juce::jlimit (0, 3, pad)]; }
     inline const char* soundName (int s) { static const char* n[] = { "KICK", "SNARE", "CLAP", "HAT" }; return n[juce::jlimit (0, 3, s)]; }
@@ -142,6 +155,11 @@ public:
     float getKnobValue (int prog, int k) const;
     juce::String getKnobText (int prog, int k) const;
     bool  isFxKilled (int k) const    { return fxKilledUi[(size_t) k].load(); }
+    // Pattern Player USER kit (message thread): load / clear a slot, the file of a slot ("" = built-in)
+    bool  loadUserSample (int slot, const juce::File& file);
+    void  clearUserSample (int slot);
+    juce::String getUserSamplePath (int slot) const { return userPaths[juce::jlimit (0, 7, slot)]; }
+    bool  isV10Killed (int k) const   { return fx4KilledUi[(size_t) juce::jlimit (0, 3, k)].load(); }
     float getKillFlash() const;
     // output meter: peak since the last call (the editor applies the ballistics)
     float takePeak (int ch)           { return peakOut[(size_t) (ch & 1)].exchange (0.0f); }
@@ -193,14 +211,26 @@ private:
 
     // effects (program 1)
     std::array<pad::FxKnob, 9> fx;   // indices = function slots (p1KnobId); 2 LPF, 3-5 + 8 the sends (KILL acts on them)
-    pad::Echo shortFx, longFx, dubFx;
+    v10::Delay longD, dubD, beatD, dub4;
+    v10::Spiral spiral; v10::Shimmer shimmer; v10::Plate plate; v10::VinylBrake brake;
+    std::array<pad::FxKnob, 4> fx4;   // program 4 amounts (KILL acts on them)
+    float sm4[4] {};
+    std::atomic<bool> brakeHeld { false };
+    float inputBeforeCombo = 1.0f, hydraBeforeCombo = 1.0f;
+    std::array<std::atomic<bool>, 4> fx4KilledUi {};
     // Pattern Player (program 3)
     pad::pp::Kits ppKits;
+    // USER kit: decoded files (original rate), staged resampled copies swapped in by the audio thread
+    std::array<std::vector<float>, 8> userRaw, userStage;
+    std::array<double, 8> userRawRate {};
+    juce::StringArray userPaths { "", "", "", "", "", "", "", "" };
+    juce::SpinLock userLock;
+    std::atomic<int> userStagedMask { 0 };
+    std::vector<float> resampleUser (int slot) const;
     std::array<station::SampleVoice, 6> ppVoices; int nextPP = 0;
     std::atomic<int> ppSteps { 0x1111 }, ppPage { 0 }, ppPlayStep { -1 };
     int lastPattern = -1; int stepsBeforeCombo = 0; std::atomic<int> pcBase { 0 }; juce::int64 lastPPStep = -1; float duckEnv = 0.0f;
     juce::AudioBuffer<float> musicBuf;
-    pad::HallReverb reverbFx;
     juce::AudioBuffer<float> revBuf;
     float sm[9] {};          // smoothed send amounts
     station::Svf lpfL, lpfR; float lpfCut = -1.0f;

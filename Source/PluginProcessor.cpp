@@ -129,10 +129,47 @@ bool BrumeProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 }
 
 //==============================================================================
+void BrumeProcessor::noiseFromSample (float& l, float& r)
+{
+    l = r = 0.0f;
+    const int len = (int) nsL.size();
+    for (auto& g : grains)
+    {
+        if (g.age >= grainLen)   // grain finished: start a new one somewhere else in the recording
+        {
+            g.age = 0;
+            g.pos = (double) noiseRandom.nextInt (juce::jmax (1, len - grainLen - 2));
+        }
+        const float w = grainWin[(size_t) g.age];
+        const auto i = (size_t) g.pos;
+        l += nsL[i] * w; r += nsR[i] * w;
+        g.pos += 1.0; ++g.age;
+    }
+}
+
 void BrumeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     fs = sampleRate;
     maxBlock = std::max (1, samplesPerBlock);
+    if (! rawNoiseL.empty())
+    {
+        // resample the recording to the session rate, set up the grains (sqrt-Hann: constant power for noise)
+        const double ratio = rawNoiseRate / fs;
+        const int outLen = (int) ((double) rawNoiseL.size() / ratio) - 2;
+        nsL.resize ((size_t) juce::jmax (8, outLen)); nsR.resize (nsL.size());
+        for (size_t k = 0; k < nsL.size(); ++k)
+        {
+            const double p = (double) k * ratio; const auto j = (size_t) p; const float fr = (float) (p - (double) j);
+            nsL[k] = rawNoiseL[j] + (rawNoiseL[j + 1] - rawNoiseL[j]) * fr;
+            nsR[k] = rawNoiseR[j] + (rawNoiseR[j + 1] - rawNoiseR[j]) * fr;
+        }
+        grainLen = juce::jmin ((int) (0.15 * fs), (int) nsL.size() / 3);
+        grainWin.resize ((size_t) grainLen);
+        for (int k = 0; k < grainLen; ++k)
+            grainWin[(size_t) k] = std::sqrt (0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) k / (float) grainLen));
+        grains[0] = { 0.0, 0 };
+        grains[1] = { (double) (nsL.size() / 2), grainLen / 2 };
+    }
     f1Collector.reset (fs);
     f1Midi.ensureSize (4096);
     f1Ready = true;
@@ -311,6 +348,13 @@ void BrumeProcessor::processChunk (juce::AudioBuffer<float>& buffer, int src, do
         sL[i] = preHP[0].processSample (inL[i] * g);
         sR[i] = preHP[1].processSample (inR[i] * g);
 
+        if (! nsL.empty())   // the recorded noise is already voiced: no generator filters
+        {
+            float a, b; noiseFromSample (a, b);
+            const float ng = noiseAmt * noiseGate * noiseTrim * 2.2f;
+            nL[i] = a * ng; nR[i] = b * ng;
+            continue;
+        }
         // white noise, partly shared between L and R (correlation ~0.5)
         const float common = noiseRandom.nextFloat() * 2.0f - 1.0f;
         // Brume: L/R correlation ~0.5; Revolo: nearly independent channels (~0.15), a wide wash

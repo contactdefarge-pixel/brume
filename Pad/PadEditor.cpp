@@ -59,7 +59,14 @@ namespace
         const bool down = p.padIsDown (pad);
         if (prog == 0)
         {
-            if (pad >= 4) return { onBeat && p.getActiveSound() == pad - 4 ? orange.brighter (0.35f) : orange, p.getActiveSound() == pad - 4 };
+            if (pad >= 4)
+            {
+                // one colour per sound: KICK red, SNARE orange, CLAP yellow, HAT green
+                static const juce::Colour soundCol[] = { juce::Colour (0xffff4d4d), juce::Colour (0xffff8a1f), juce::Colour (0xffffd23f), juce::Colour (0xff3ddc84) };
+                const auto c = soundCol[pad - 4];
+                const bool on = p.getActiveSound() == pad - 4;
+                return { on && onBeat ? c.brighter (0.35f) : c, on };
+            }
             return { p.getActiveSound() >= 0 && onBeat && p.getActiveSpeed() == pad ? blue.brighter (0.4f) : blue, p.getActiveSpeed() == pad };
         }
         if (prog == 1)
@@ -81,8 +88,9 @@ namespace
         }
         if (prog == 3)
         {
-            if (pad == 4) return { orange, p.fxInputOn() };
-            if (pad == 5) return { orange, p.fxHydraOn() };
+            if (pad == 4) return { print, down };                 // VINYL BRAKE while held
+            if (pad == 5) return { orange, p.fxInputOn() };
+            if (pad == 6) return { orange, p.fxHydraOn() };
         }
         return { edge, false };
     }
@@ -101,7 +109,7 @@ namespace
 "     Programme 1 = X-PAD (kick, snare, clap, hi-hat en roulements) + effets Send du DJM-V10\n"
 "     Programme 2 = WHITE NOISE (bruit blanc façon Revolo, réverbe, trémolo)\n"
 "     Programme 3 = PATTERN PLAYER (boîte à rythme 16 pas, comme dans Traktor)\n"
-"     Programme 4 = GLOBAL (K1 = MASTER, K2 = SHORT DELAY, PAD 5 / PAD 6 = FX SOURCE INPUT / HYDRA)\n"
+"     Programme 4 = V10 FX (delay, spiral, dub echo, shimmer, vinyl brake)\n"
 "  Hydra reconnaît tout seul le programme utilisé (après le SETUP LPD8) et l'écran change ses étiquettes.\n"
 "- À l'écran : cliquer sur PROGRAM puis sur un des pads 1 à 4, ou utiliser les pads et boutons à la souris.\n"
 "- Tout est calé sur le tempo de Traktor grâce à l'horloge MIDI (onglet SYNCHRO).\n"
@@ -110,7 +118,7 @@ namespace
 "     INPUT = la musique de Traktor. HYDRA = les sons d'Hydra (roulements X-PAD, Pattern Player).\n"
 "     Les deux allumés : tout passe dans les effets. Une source éteinte passe intacte, sans effet.\n"
 "     Le bruit blanc passe toujours dans les effets (comme le NOISE du RMX-1000).\n"
-"     Sur le LPD8 : PAD 6 + PAD 7 en même temps allume / éteint INPUT ; programme 4 : PAD 5 = INPUT, PAD 6 = HYDRA.");
+"     Sur le LPD8 : PAD 6 + PAD 7 en même temps allume / éteint INPUT ; programme 4 : PAD 6 = INPUT, PAD 7 = HYDRA.");
             case 1: return u (
 "PROGRAMME 1 - X-PAD + EFFETS\n\n"
 "PADS DU HAUT (PAD 5 à 8) : KICK, SNARE, CLAP, HAT. Un appui lance le roulement, un deuxième appui l'arrête. "
@@ -122,15 +130,15 @@ namespace
 "   K1 DRUMS VOL : volume des roulements. Monter avant le drop, baisser au drop.\n"
 "   K2 PITCH : hauteur des sons (-12 à +12). Monter pendant un roulement = montée.\n\n"
 "   K3 LPF : filtre passe-bas. À zéro il ne fait rien, en tournant le son s'assombrit jusqu'à 150 Hz.\n\n"
-"   EFFETS SEND FAÇON DJM-V10 (K4, K7, K8 = quantité de musique envoyée dans chaque effet ; SHORT DELAY : programme 4, K2) :\n"
+"   EFFETS SEND FAÇON DJM-V10 (K4, K7, K8 = quantité de musique envoyée dans chaque effet ; les autres effets V10 : programme 4) :\n"
 "   K4 LONG DELAY : delay long.\n"
 "   K7 DUB ECHO : écho sombre qui se fond en réverbe, comme sur la V10 / 900NXS2.\n"
-"   K8 REVERB : réverbe.\n"
+"   K8 REVERB : réverbe plate (algorithme Dattorro), dense et douce.\n"
 "   K5 SIZE / FEEDBACK : pour les delays et le dub echo, la durée des répétitions (à fond = elles continuent "
-"jusqu'au KILL FX) ; pour la réverbe, la taille de la pièce (à fond = grande salle vide, plus de graves).\n"
-"   K6 TIME : la durée, en continu. Short delay de 1/32 à 1/8 de temps, long delay de 1/4 à 1 temps : tourner TIME "
-"pendant que les répétitions sonnent les fait glisser en hauteur, comme une bande (DJM-V10). Dub echo de 1/8 à "
-"1 temps, réverbe de courte à très longue. Tout est calé sur le tempo de Traktor.\n\n"
+"jusqu'au KILL FX) ; pour la réverbe, la taille (pré-délai et densité), sans jamais déformer le son.\n"
+"   K6 TIME : la durée, en continu. Long delay de 1/4 à 1 temps, dub echo de 1/8 à 1 temps : tourner TIME "
+"pendant que les répétitions sonnent les fait glisser en hauteur, comme une bande (DJM-V10). Réverbe de 0,8 à 10 s. "
+"Tout est calé sur le tempo de Traktor.\n\n"
 "Baisser un envoi (K4, K7, K8) laisse la queue sonner. KILL FX ouvre le LPF, ferme les envois et réduit le feedback pour que les "
 "queues s'éteignent toutes seules.\n\n"
 "EXEMPLE DE DROP : SNARE (le roulement part en 1/4), puis 1/8, 1/16, 1/32 en montant K1 et K2 ; au drop, "
@@ -163,7 +171,8 @@ namespace
 "   K2 PITCH : hauteur du son (-12 à +12).\n"
 "   K3 DECAY : longueur du son (court = sec, à fond = son entier).\n"
 "   K4 DUCK : baisse la musique à chaque coup (effet pompe). Seulement quand FX SOURCE INPUT est allumé.\n"
-"   K5 KIT : 808, 909 ou RMX (les sons extraits de ton RMX-1000).\n"
+"   K5 KIT : 808, 909, RMX (les sons extraits de ton RMX-1000) ou USER (tes propres sons : bouton SAMPLES, "
+"panneau de droite ; WAV, AIFF, FLAC, MP3).\n"
 "   K6 SOUND : KICK, SNARE, CLAP, CL HAT, OP HAT, RIM, TOM, CYMBAL.\n"
 "   K7 PATTERN : 8 patterns de départ (4 temps, contretemps, backbeat, croches, doubles, syncopé, shuffle, fill). "
 "Tourner K7 charge le pattern ; tes modifications de pas restent tant que tu ne le tournes pas.\n"
@@ -182,13 +191,19 @@ namespace
 "Le bouton CC seul n'envoie rien (c'est un changement de mode du contrôleur), d'où la combinaison CC + pad.\n\n"
 "Après un KILL, un effet reste coupé même si son bouton est encore tourné : il revient dès que tu bouges ce bouton.");
             case 6: return u (
-"PROGRAMME 4 - GLOBAL\n\n"
-"Les réglages généraux, pilotables depuis le LPD8.\n\n"
-"   K1 MASTER : volume de sortie (la valeur en dB s'affiche aussi à droite, à côté du vu-mètre).\n"
-"   K2 SHORT DELAY : envoi vers le delay court (SIZE et TIME : K5 et K6 du programme 1).\n"
-"   PAD 5 : FX SOURCE INPUT marche / arrêt (la musique entre dans les effets ou passe intacte).\n"
-"   PAD 6 : FX SOURCE HYDRA marche / arrêt (les sons d'Hydra entrent dans les effets ou passent intacts).\n\n"
-"Raccourci depuis n'importe quel programme : PAD 6 + PAD 7 en même temps allume / éteint INPUT.");
+"PROGRAMME 4 - V10 FX\n\n"
+"Les effets du DJM-V10, un effet par colonne de boutons : en haut le temps (ou la taille), en bas la quantité.\n\n"
+"   K1 DELAY TIME / K5 DELAY : delay propre, de 1/8 de temps à 2 temps. Tourner le temps pendant que les répétitions sonnent "
+"les fait glisser en hauteur, comme sur la V10.\n"
+"   K2 SPIRAL TIME / K6 SPIRAL : écho dont les répétitions se fondent en réverbe (Spiral de la V10), 1/8 à 1 temps.\n"
+"   K3 DUB TIME / K7 DUB ECHO : écho à bande, sombre et chaud, 1/8 à 1 temps.\n"
+"   K4 SHIMMER SIZE / K8 SHIMMER : réverbe dont la queue monte d'une octave (son aérien).\n\n"
+"PADS\n"
+"   PAD 5 VINYL BRAKE (maintenir) : tout le son ralentit jusqu'à l'arrêt en un temps, comme un vinyle qu'on stoppe ; "
+"relâcher repart aussitôt.\n"
+"   PAD 6 / PAD 7 : FX SOURCE INPUT / HYDRA marche / arrêt.\n\n"
+"Les effets sont des envois : baisser la quantité laisse la queue s'éteindre. KILL FX les coupe aussi.\n"
+"Le MASTER se règle dans le panneau de droite.");
             case 5: return u (
 "SETUP LPD8 (une seule fois)\n\n"
 "Chaque programme du LPD8 envoie ses propres numéros de notes et de boutons. Le SETUP les apprend, ensuite "
@@ -375,6 +390,81 @@ void PadEditor::Help::resized()
 }
 
 //==============================================================================
+PadEditor::UserKit::UserKit (PadEditor& e) : ed (e)
+{
+    for (int i = 0; i < 8; ++i)
+    {
+        auto* c = choose.add (new juce::TextButton ("CHOISIR"));
+        c->onClick = [this, i] { pick (i); };
+        addAndMakeVisible (c);
+        auto* x = clear.add (new juce::TextButton ("RETIRER"));
+        x->setComponentID ("kill");
+        x->onClick = [this, i] { ed.proc.clearUserSample (i); repaint(); };
+        addAndMakeVisible (x);
+    }
+    close.onClick = [this] { setVisible (false); };
+    addAndMakeVisible (close);
+}
+
+void PadEditor::UserKit::pick (int slot)
+{
+    chooser = std::make_unique<juce::FileChooser> ("Sample pour " + juce::String (pad::pp::soundName (slot)),
+                                                   juce::File::getSpecialLocation (juce::File::userMusicDirectory),
+                                                   "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this, slot] (const juce::FileChooser& fc)
+                          {
+                              const auto f = fc.getResult();
+                              if (f.existsAsFile() && ! ed.proc.loadUserSample (slot, f))
+                                  juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Hydra",
+                                                                          juce::String::fromUTF8 ("Impossible de lire ce fichier audio."));
+                              repaint();
+                          });
+}
+
+void PadEditor::UserKit::paint (juce::Graphics& g)
+{
+    g.fillAll (panel.withAlpha (0.98f));
+    auto top = getLocalBounds().removeFromTop (44).reduced (16, 0);
+    g.setColour (print);
+    g.setFont (logoFont (16.0f));
+    g.drawText ("HYDRA", top, juce::Justification::centredLeft);
+    g.setColour (orange);
+    g.setFont (labelFont (10.0f, true, 0.3f));
+    g.drawText ("USER KIT  -  PATTERN PLAYER", top.withTrimmedLeft (120), juce::Justification::centredLeft);
+    g.setColour (printDim);
+    g.setFont (labelFont (11.0f, false, 0.02f));
+    g.drawText (juce::String::fromUTF8 ("Tes propres sons pour le Pattern Player. Programme 3 : K5 KIT sur USER. Un emplacement vide joue le son du kit RMX."),
+                getLocalBounds().reduced (18, 0).withTop (42).withHeight (18), juce::Justification::centredLeft);
+    for (int i = 0; i < 8; ++i)
+    {
+        const int step = juce::jmax (24, (getHeight() - 76) / 8);
+        const auto row = juce::Rectangle<int> (18, 68 + i * step, getWidth() - 36, step - 4);
+        g.setColour (well);
+        g.fillRoundedRectangle (row.toFloat(), 8.0f);
+        g.setColour (orange);
+        g.setFont (labelFont (11.0f, true, 0.1f));
+        g.drawText (pad::pp::soundName (i), row.withWidth (110).withTrimmedLeft (12), juce::Justification::centredLeft);
+        const auto path = ed.proc.getUserSamplePath (i);
+        g.setColour (path.isEmpty() ? printFaint : print);
+        g.setFont (monoFont (11.0f));
+        g.drawFittedText (path.isEmpty() ? juce::String::fromUTF8 ("(son du kit RMX)") : juce::File (path).getFileName(),
+                          row.withTrimmedLeft (130).withTrimmedRight (230), juce::Justification::centredLeft, 1, 0.7f);
+    }
+}
+
+void PadEditor::UserKit::resized()
+{
+    close.setBounds (getWidth() - 44, 6, 36, 32);
+    for (int i = 0; i < 8; ++i)
+    {
+        const int step = juce::jmax (24, (getHeight() - 76) / 8), y = 68 + i * step;
+        choose[i]->setBounds (getWidth() - 236, y + 1, 104, step - 6);
+        clear[i]->setBounds (getWidth() - 126, y + 1, 104, step - 6);
+    }
+}
+
+//==============================================================================
 void PadEditor::PadButton::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (3.0f);
@@ -486,7 +576,8 @@ PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p
     ccBtn.onClick = [this] { proc.killFx(); };
     setupBtn.onClick = [this] { if (proc.getLearnStep() > 0) proc.cancelLearn(); else proc.startLearn(); };
     helpBtn.onClick = [this] { help.setBounds (getLocalBounds()); { static const int page[] = { 1, 2, 3, 6 }; help.show (page[juce::jlimit (0, 3, proc.getProgram())]); } };
-    for (auto* b : { &progBtn, &noteBtn, &pcBtn, &ccBtn, &setupBtn, &helpBtn }) body.addAndMakeVisible (*b);
+    samplesBtn.onClick = [this] { openUserKit(); };
+    for (auto* b : { &progBtn, &noteBtn, &pcBtn, &ccBtn, &setupBtn, &helpBtn, &samplesBtn }) body.addAndMakeVisible (*b);
 
     bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     bpmSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -507,6 +598,7 @@ PadEditor::PadEditor (PadProcessor& p) : juce::AudioProcessorEditor (p), proc (p
     layoutBody();
     addChildComponent (updateBanner);
     addChildComponent (help);
+    addChildComponent (userKit);
     setResizable (true, true);
     setResizeLimits ((int) (kW * 0.6f), (int) (kH * 0.6f), (int) (kW * 1.6f), (int) (kH * 1.6f));
     if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) kW / (double) kH);
@@ -537,8 +629,9 @@ void PadEditor::layoutBody()
     masterKnob.setBounds (px + 16, 156, 66, 66);
     fxInputBtn.setBounds (px + 146, 174, 138, 32);
     fxHydraBtn.setBounds (px + 146, 212, 138, 32);
-    setupBtn.setBounds (px + 14, 290, 190, 40);
-    helpBtn.setBounds (px + 214, 290, 72, 40);
+    setupBtn.setBounds (px + 14, 290, 116, 40);
+    samplesBtn.setBounds (px + 136, 290, 86, 40);
+    helpBtn.setBounds (px + 228, 290, 58, 40);
 }
 
 void PadEditor::resized()
@@ -546,6 +639,7 @@ void PadEditor::resized()
     body.setTransform (juce::AffineTransform::scale ((float) getWidth() / (float) kW));
     updateBanner.setBounds (0, 0, getWidth(), 40);
     if (help.isVisible()) help.setBounds (getLocalBounds());
+    if (userKit.isVisible()) userKit.setBounds (getLocalBounds());
 }
 
 void PadEditor::timerCallback()
@@ -559,8 +653,8 @@ void PadEditor::timerCallback()
         const bool used = juce::String (knobLabel (prog, k)).isNotEmpty();
         s.setEnabled (used);
         s.setAlpha (used ? 1.0f : 0.25f);
-        const bool killed = (prog == 0 && proc.isFxKilled (p1Slot (k))) || (prog == 3 && k == 1 && proc.isFxKilled (8));
-        s.getProperties().set ("arc", (juce::int64) (killed ? juce::Colour (0xff5a2a2a) : prog == 3 ? print : orange).getARGB());
+        const bool killed = (prog == 0 && proc.isFxKilled (p1Slot (k))) || (prog == 3 && k >= 4 && proc.isV10Killed (k - 4));
+        s.getProperties().set ("arc", (juce::int64) (killed ? juce::Colour (0xff5a2a2a) : orange).getARGB());
     }
     const bool p3 = prog == 2;
     noteBtn.setEnabled (p3); pcBtn.setEnabled (p3);
@@ -649,7 +743,7 @@ void PadEditor::paintBody (juce::Graphics& g)
         g.setFont (labelFont (9.0f, true, 0.12f));
         g.drawText ("K" + juce::String (k + 1), juce::Rectangle<float> (kb.getCentreX() - 40.0f, kb.getY() - 38.0f, 80.0f, 12.0f), juce::Justification::centred);
         if (label.isEmpty()) continue;
-        const bool killed = (prog == 0 && proc.isFxKilled (p1Slot (k))) || (prog == 3 && k == 1 && proc.isFxKilled (8));
+        const bool killed = (prog == 0 && proc.isFxKilled (p1Slot (k))) || (prog == 3 && k >= 4 && proc.isV10Killed (k - 4));
         g.setColour (killed ? red : orange);
         g.setFont (labelFont (9.5f, true, 0.1f));
         g.drawFittedText (label, juce::Rectangle<int> ((int) kb.getCentreX() - 44, (int) kb.getY() - 23, 88, 13), juce::Justification::centred, 1, 0.7f);

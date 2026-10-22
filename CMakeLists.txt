@@ -52,6 +52,7 @@ juce_add_plugin(Brume
 # Michroma font for the logo plate (SIL Open Font License, Resources/OFL-Michroma.txt)
 juce_add_binary_data(BrumeAssets SOURCES Resources/Michroma-Regular.ttf
     Resources/rmx_kick.wav Resources/rmx_snare.wav Resources/rmx_clap.wav Resources/rmx_hat.wav
+    Resources/revolo_noise.wav
     Resources/Syncopate-Bold.ttf Resources/Inter-SemiBold.ttf Resources/Inter-Bold.ttf Resources/JetBrainsMono-Medium.ttf)
 set_target_properties(BrumeAssets PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 
